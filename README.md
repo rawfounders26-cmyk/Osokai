@@ -1,5 +1,5 @@
 # Osok-AI
-Local-first Muse-type agent. See PRD.md.
+Local-first presistent personal agent. See PRD.md.
 
 ## Wiring
 All UIs -> `http://127.0.0.1:8765` (API_BASE_URL):
