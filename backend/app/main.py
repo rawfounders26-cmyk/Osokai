@@ -44,7 +44,7 @@ _cors = [o.strip() for o in os.getenv("OSOKAI_CORS", "*").split(",") if o.strip(
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 mem = Memory()
 
-OSOKAI_VERSION = "0.4.0"
+OSOKAI_VERSION = "0.5.0"
 
 # ---- reliability: request ids + per-IP rate limiting (abuse shield) ----
 import uuid as _uuid
@@ -561,6 +561,28 @@ async def chat(body: ChatIn, _=Depends(need_auth)):
         await hub.push()
         return {"reply": reply, "approval_required": False, "action": "agent", "run_id": rid}
     mem.add("user", body.message)
+    # SLM-zone: on-device weights answer when ready, Groq otherwise (optimizer routes)
+    try:
+        from app.local import confidence as _conf
+        from app.slm import status as _slm_status, generate as _slm_gen
+        from app.optimizer import recommend as _rec
+        from app.usage import log as _ulog2
+    except ImportError:
+        from local import confidence as _conf
+        from slm import status as _slm_status, generate as _slm_gen
+        from optimizer import recommend as _rec
+        from usage import log as _ulog2
+    _route = _rec("chat", _conf(body.message), bool(_slm_status()["available"]))
+    if _route["route"] == "slm":
+        try:
+            import asyncio as _aio_slm
+            reply = _san(await _aio_slm.to_thread(_slm_gen, body.message))
+            mem.add("Osok-AI", reply)
+            _ulog2("slm", "on-device", body.message, reply, 0, tokens=0)
+            await hub.push()
+            return {"reply": reply, "approval_required": False, "action": "slm"}
+        except Exception:
+            pass  # weights hiccup -> fall through to Groq
     reply = _san(chat_with_grok(body.message))
     mem.add("Osok-AI", reply)
     await hub.push()
@@ -1316,6 +1338,210 @@ async def voice_sess_finish(payload: dict, _=Depends(need_auth)):
     text = r.json().get("text", "")
     return {"ok": True, "text": text,
             "command": {"hint": "POST this text to /voice/command", "text": text}}
+
+# ---- v0.5: client-held E2E (server stores pubkeys + blind ciphertext only) ----
+@app.post("/e2e/register")
+async def e2e_register(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.e2e import register
+    except ImportError:
+        from e2e import register
+    r = register(payload.get("device", ""), payload.get("pubkey", ""))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad key"))
+    await hub.push()
+    return r
+
+@app.get("/e2e/directory")
+def e2e_directory(_=Depends(need_auth)):
+    try:
+        from app.e2e import directory
+    except ImportError:
+        from e2e import directory
+    return {"devices": directory()}
+
+@app.post("/e2e/push")
+async def e2e_push(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.e2e import push_envelope
+    except ImportError:
+        from e2e import push_envelope
+    r = push_envelope(payload.get("device", ""), payload.get("envelope", {}))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad envelope"))
+    return r
+
+@app.get("/e2e/pull")
+def e2e_pull(device: str, _=Depends(need_auth)):
+    try:
+        from app.e2e import pull_envelopes
+    except ImportError:
+        from e2e import pull_envelopes
+    return {"envelopes": pull_envelopes(device)}
+
+# ---- v0.5: SLM slot ----
+@app.get("/slm/status")
+def slm_status(_=Depends(need_auth)):
+    try:
+        from app.slm import status
+    except ImportError:
+        from slm import status
+    return status()
+
+# ---- v0.5: wake-word config + streaming voice ----
+@app.get("/voice/wake-config")
+def wake_get(_=Depends(need_auth)):
+    try:
+        from app.wake import get_config
+    except ImportError:
+        from wake import get_config
+    return get_config()
+
+@app.post("/voice/wake-config")
+async def wake_set(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.wake import set_config
+    except ImportError:
+        from wake import set_config
+    r = set_config(payload.get("keyword", ""), float(payload.get("threshold", 0)),
+                   int(payload.get("cooldown_s", 0)))
+    await hub.push()
+    return r
+
+@app.post("/voice/stream/start")
+async def stream_start(_=Depends(need_auth)):
+    try:
+        from app.wake import stream_start as _ss
+    except ImportError:
+        from wake import stream_start as _ss
+    return {"ok": True, "stream": _ss()}
+
+@app.post("/voice/stream/chunk")
+async def stream_chunk(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.wake import stream_chunk as _sc
+    except ImportError:
+        from wake import stream_chunk as _sc
+    r = _sc(payload.get("stream", ""), payload.get("audio_b64", ""), int(payload.get("ms", 100)))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad chunk"))
+    return r
+
+@app.post("/voice/stream/finish")
+async def stream_finish(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.wake import stream_finish as _sf
+    except ImportError:
+        from wake import stream_finish as _sf
+    r = _sf(payload.get("stream", ""))
+    if not r.get("ok"):
+        raise HTTPException(status_code=502, detail=r.get("error", "transcribe failed"))
+    return r
+
+# ---- v0.5: spend optimizer ----
+@app.get("/usage/optimize")
+def usage_optimize(days: int = 30, _=Depends(need_auth)):
+    try:
+        from app.optimizer import report
+    except ImportError:
+        from optimizer import report
+    return report(days)
+
+# ---- v0.5: public share links (capability URLs, revocable) ----
+@app.post("/share/links")
+async def share_link_create(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.share import create_link
+    except ImportError:
+        from share import create_link
+    r = create_link(payload.get("kind", "goal"), int(payload.get("ref", 0)),
+                    float(payload.get("ttl_hours", 72)))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad link"))
+    await hub.push()
+    return r
+
+@app.get("/share/links")
+def share_link_list(_=Depends(need_auth)):
+    try:
+        from app.share import list_links
+    except ImportError:
+        from share import list_links
+    return {"links": list_links()}
+
+@app.post("/share/links/revoke")
+async def share_link_revoke(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.share import revoke_link
+    except ImportError:
+        from share import revoke_link
+    r = revoke_link(payload.get("token", ""))
+    await hub.push()
+    return r
+
+@app.get("/s/{token}")
+def share_view(token: str):
+    """Public read-only page. No auth — the unguessable token IS the auth."""
+    from fastapi.responses import HTMLResponse as _HTML
+    try:
+        from app.share import resolve_link, render_goal_page
+    except ImportError:
+        from share import resolve_link, render_goal_page
+    link = resolve_link(token)
+    if not link:
+        return _HTML("<h1>Link expired, revoked, or invalid</h1>", status_code=404)
+    if link["kind"] == "goal":
+        return _HTML(render_goal_page(link["ref"]))
+    return _HTML("<h1>Unknown share kind</h1>", status_code=404)
+
+# ---- v0.5: research digests ----
+@app.post("/digests/topics")
+async def digest_add(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.digest import add_topic
+    except ImportError:
+        from digest import add_topic
+    r = add_topic(payload.get("topic", ""))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad topic"))
+    await hub.push()
+    return r
+
+@app.get("/digests/topics")
+def digest_topics(_=Depends(need_auth)):
+    try:
+        from app.digest import list_topics
+    except ImportError:
+        from digest import list_topics
+    return {"topics": list_topics()}
+
+@app.post("/digests/topics/{tid}/enable")
+async def digest_enable(tid: int, payload: dict, _=Depends(need_auth)):
+    try:
+        from app.digest import set_active
+    except ImportError:
+        from digest import set_active
+    r = set_active(tid, bool(payload.get("active", True)))
+    await hub.push()
+    return r
+
+@app.delete("/digests/topics/{tid}")
+async def digest_delete(tid: int, _=Depends(need_auth)):
+    try:
+        from app.digest import remove_topic
+    except ImportError:
+        from digest import remove_topic
+    r = remove_topic(tid)
+    await hub.push()
+    return r
+
+@app.get("/digests")
+def digest_latest(limit: int = 10, _=Depends(need_auth)):
+    try:
+        from app.digest import latest
+    except ImportError:
+        from digest import latest
+    return {"digests": latest(limit)}
 
 # ---- research + agent builder ----
 @app.post("/research")

@@ -4,19 +4,20 @@
 > until merchant-services building starts. Conversations are RAM; this file is disk.
 
 ## Where we are
-- **Version**: v0.4.x (cloud pack latest). **Tests**: 42/42 green.
-- **Last shipped**: v0.4.x feature scale-up — outfit planner (occasion/week-plan/pack/scores/laundry/vision intake)
-  + bill splitting (quick-split/UPI links/repeats/ledger/receipt-scan/team-house) + cloud pack
-  (prod compose + Caddy TLS, portable data dirs, secrets/backup scripts, DEPLOY.md, CI docker build).
-- **Before that**: v0.4 platform (scheduled autonomy, sandbox enforcement, team billing, relay-lite,
-  SLM confidence routing, voice sessions) · v0.3 (usage dashboard, signed marketplace, team mode,
-  fast lane, voice loop) · v0.2 (proactive engine, orchestrator, memory 2.0, hybrid RAG, rate limits, Docker/CI).
+- **Version**: v0.5.0. **Tests**: 48/48 green.
+- **Last shipped**: v0.5 — client-held E2E keys (X25519, server-blind), SLM provider slot + chat integration,
+  wake-word config + streaming voice (VAD, whisper auto-transcribe), spend optimizer (`/usage/optimize`),
+  public share links (signed/revocable/no-auth view), eval-gated auto-deploy (release-gate + CI tagging),
+  research digests (topics + scheduler kind). All live-verified, probe data cleaned.
+- **Before that**: v0.4.x feature scale-up (outfit + bills chat-driven, mobile screens, cloud pack) · v0.4 platform
+  (scheduled autonomy, sandbox, team billing, relay-lite, SLM routing, voice sessions) · v0.3 · v0.2.
 - **Repo**: `github.com/rawfounders26-cmyk/Osokai`, branch `main`.
 
 ## What's paused / what's next
-- **v0.5 platform work ON HOLD** — resume only when user says "start v0.5".
+- **v0.5 DONE** — shipped this session per user go.
 - **Current front line**: merchant-services ("Muse-connectors for India") — DISCUSSION ONLY, Phase 0 validation.
-  No code until user says build.
+  Next build candidates (v0.6): plugin sandbox runtime, cross-device handoff, SLM weights drop-in,
+  merchant-services Phase 1. No code until user says build.
 
 ## Standing instructions
 - Don't build without an explicit go from the user. Discussion sessions = no code, no commits except docs.
@@ -58,9 +59,11 @@
 
 ### B. Beachhead — UNDECIDED (lean: Anna Nagar or equivalent; must be walkable for founder)
 ### C. Concierge test — PENDING (see Phase 0 above)
-### D. v0.5 platform items — parked: client-held E2E keys, bundled SLM, wake-word/streaming, spend optimizer,
-#    public share links, eval-gated auto-deploy, proactive research digests (see SCALING.md Next v0.5/v0.6)
+### D. v0.5 — ✅ DONE this session (see SCALING.md). v0.6 candidates parked: plugin sandbox runtime,
+#    cross-device handoff, SLM weights drop-in, merchant-services Phase 1.
 
 ## Session log
-- 2026-09-30: v0.4.x shipped + pushed (40 tests) → cloud pack shipped + pushed (42 tests) →
-  merchant-services strategy discussion (no code) → HANDOFF.md created. Next: Phase 0 validation or user calls v0.5.
+- 2026-09-30: v0.5 shipped + pushed (48 tests: e2e keys, SLM slot, wake/streaming, optimizer,
+  share links, release gate, digests) → HANDOFF + SCALING updated. Next: user picks v0.6 or merchant Phase 1.
+- 2026-09-30 (earlier): v0.4.x shipped + pushed (40 tests) → cloud pack shipped + pushed (42 tests) →
+  merchant-services strategy discussion (no code) → HANDOFF.md created.

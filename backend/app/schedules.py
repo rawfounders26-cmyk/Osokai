@@ -18,7 +18,8 @@ except ImportError:
     from paths import data as _pdata
 
 DB = _pdata("osokai.db")
-KINDS = ("goal_step", "briefing", "research_sweep", "nudge_scan", "bills_recurring", "settle_reminder")
+KINDS = ("goal_step", "briefing", "research_sweep", "nudge_scan", "bills_recurring", "settle_reminder",
+         "research_digest")
 
 
 def _db():
@@ -154,6 +155,16 @@ def execute(job: dict) -> dict:
             if s["debts"] and nudge("settle", f"settle:{g['id']}", f"{g['name']}: " + s["reply"][:300]):
                 return {"ok": True, "note": f"reminded {g['name']}"}
             return {"ok": True, "note": "all settled"}
+        if kind == "research_digest":
+            try:
+                from app.digest import run_digest, run_all
+            except ImportError:
+                from digest import run_digest, run_all
+            if args.get("topic"):
+                r = run_digest(args["topic"])
+                return {"ok": r["ok"], "note": r["note"]}
+            r = run_all()
+            return {"ok": True, "note": r["note"]}
     except Exception as e:
         return {"ok": False, "note": f"{type(e).__name__}: {e}"[:300]}
     return {"ok": False, "note": "unknown kind"}

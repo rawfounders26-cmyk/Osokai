@@ -1,0 +1,23 @@
+name: release
+on:
+  push:
+    branches: [main]
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r backend/requirements.txt
+      - run: sh scripts/release-gate.sh
+      - name: tag release
+        if: contains(github.event.head_commit.message, '[release]')
+        run: |
+          TAG="v$(date +%Y.%m.%d)-${GITHUB_SHA::7}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

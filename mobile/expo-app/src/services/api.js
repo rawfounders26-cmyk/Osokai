@@ -396,6 +396,16 @@ export const billRecurringAdd = (gid, title, amount, paid_by = 'Me', day = 1) =>
   post('/bills/recurring', { gid, title, amount, paid_by, day });
 export const billHouseLedger = (gid) => get(`/bills/house-ledger/${gid}`);
 export const billReceipt = (image_b64) => post('/bills/receipt', { image_b64 });
+
+// v0.5 surfaces
+export const e2eRegister = (device, pubkey) => post('/e2e/register', { device, pubkey });
+export const e2eDirectory = () => get('/e2e/directory').then(j => j.devices || []);
+export const slmStatus = () => get('/slm/status');
+export const wakeConfig = () => get('/voice/wake-config');
+export const usageOptimize = () => get('/usage/optimize');
+export const shareLinkCreate = (kind, ref, ttl_hours = 72) => post('/share/links', { kind, ref, ttl_hours });
+export const digestTopics = () => get('/digests/topics').then(j => j.topics || []);
+export const digestAdd = (topic) => post('/digests/topics', { topic });
 // live sync: one socket per app session, backoff reconnect, heartbeat-safe
 let syncSock = null;
 let syncDelay = 5000;

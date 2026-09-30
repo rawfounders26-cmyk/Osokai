@@ -356,3 +356,102 @@ def test_relay_key_preference(tmp_path, monkeypatch):
     assert k1 != k2  # dedicated relay key wins when present
     r = relay.seal("phone", {"a": 1})
     assert r["ok"] and relay.unseal(relay.pull("phone")[0]["envelope"]) == {"a": 1}
+
+# ---- v0.5 evals: e2e keys, slm slot, wake vad, optimizer, share links, digests ----
+
+def test_e2e_server_blind_roundtrip(tmp_path, monkeypatch):
+    import e2e
+    monkeypatch.setattr(e2e, "DB", str(tmp_path / "e.db"))
+    phone = e2e.generate_keypair()
+    desk = e2e.generate_keypair()
+    assert e2e.register("phone", phone["public"])["ok"]
+    assert e2e.register("desk", desk["public"])["ok"]
+    assert e2e.register("evil", "not-a-key")["ok"] is False
+    env = e2e.seal_to(phone["private"], desk["public"], "phone", {"text": "meet at 8"})
+    assert e2e.push_envelope("desk", env)["ok"]
+    assert e2e.push_envelope("desk", {"v": 1})["ok"] is False
+    pulled = e2e.pull_envelopes("desk")
+    assert len(pulled) == 1
+    blob = pulled[0]["envelope"]["ct"]
+    assert "meet at 8" not in blob  # server-blind ciphertext
+    opened = e2e.open_envelope(desk["private"], pulled[0]["envelope"])
+    assert opened == {"from": "phone", "payload": {"text": "meet at 8"}}
+    assert e2e.pull_envelopes("desk") == []
+
+
+def test_slm_slot_escalates(monkeypatch):
+    import slm
+    monkeypatch.setattr(slm, "_has", lambda m: False)  # no local backends: must escalate
+    st = slm.status()
+    assert st["available"] is False and "llama-cpp-python" in st["hint"]
+    try:
+        slm.generate("hello")
+        assert False, "should escalate"
+    except RuntimeError as e:
+        assert str(e) == "no-slm"
+
+
+def test_wake_vad_and_config(tmp_path, monkeypatch):
+    import struct
+    import wake
+    monkeypatch.setattr(wake, "DB", str(tmp_path / "w.db"))
+    silence = struct.pack("<800h", *([0] * 800))
+    loud = struct.pack("<800h", *([2000] * 800))
+    assert wake.vad(silence)["speech"] is False
+    assert wake.vad(loud)["speech"] is True
+    assert wake.get_config()["keyword"] == "hey osok"
+    wake.set_config(keyword="ok osok")
+    assert wake.get_config()["keyword"] == "ok osok"
+    sid = wake.stream_start()
+    r = wake.stream_chunk(sid, __import__("base64").b64encode(loud).decode(), ms=100)
+    assert r["ok"] and r["speech"] is True and r["ended"] is False
+
+
+def test_optimizer_routes_and_report(tmp_path, monkeypatch):
+    import usage
+    import optimizer
+    monkeypatch.setattr(usage, "DB", str(tmp_path / "u2.db"))
+    usage.log("chat", "m", "x" * 400, "y" * 400, 100)
+    assert optimizer.recommend("chat", 1.0)["route"] == "local"
+    assert optimizer.recommend("chat", 0.3)["route"] == "groq"
+    assert optimizer.recommend("chat", 0.7)["route"] == "groq"  # no weights: escalate, flagged
+    assert optimizer.recommend("chat", 0.7, slm_ready=True)["route"] == "slm"
+    rep = optimizer.report(30)
+    assert rep["by_task"]["chat"]["calls"] >= 1 and "policy" in rep
+
+
+def test_share_links_lifecycle(tmp_path, monkeypatch):
+    import sqlite3
+    import share
+    db = sqlite3.connect(str(tmp_path / "s.db"))
+    db.execute("CREATE TABLE share_links(token TEXT PRIMARY KEY, kind TEXT, ref INT, exp REAL, revoked INT DEFAULT 0, ts REAL)")
+    monkeypatch.setattr(share, "_ldb", lambda: db)
+    assert share.create_link("nonsense", 1)["ok"] is False
+    r = share.create_link("goal", 7, ttl_hours=1)
+    assert r["ok"] and r["url"].startswith("/s/")
+    assert share.resolve_link(r["token"]) == {"kind": "goal", "ref": 7}
+    assert share.resolve_link("bogus") is None
+    assert "not found" in share.render_goal_page(999999).lower()
+    share.revoke_link(r["token"])
+    assert share.resolve_link(r["token"]) is None
+    assert len(share.list_links()) == 1
+
+
+def test_digest_topics_and_schedule_kind(tmp_path, monkeypatch):
+    import digest
+    import schedules
+    monkeypatch.setattr(digest, "DB", str(tmp_path / "d.db"))
+    monkeypatch.setattr(schedules, "DB", str(tmp_path / "s2.db"))
+    t = digest.add_topic("UPI trends")
+    assert t["ok"] and len(digest.list_topics()) == 1
+    assert digest.add_topic("")["ok"] is False
+    j = schedules.create("nightly", "research_digest", {"topic": "UPI trends"}, every_min=1440)
+    assert j["ok"]
+    monkeypatch.setattr(digest, "run_digest", lambda topic: {"ok": True, "note": f"mock {topic}"})
+    try:
+        import app.digest as _ad
+        monkeypatch.setattr(_ad, "run_digest", lambda topic: {"ok": True, "note": f"mock {topic}"})
+    except ImportError:
+        pass
+    r = schedules.execute({"kind": "research_digest", "args": {"topic": "UPI trends"}})
+    assert r["ok"] and "mock" in r["note"]

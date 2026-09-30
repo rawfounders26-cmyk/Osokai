@@ -1,5 +1,14 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## v0.5 — ✅ DONE (shipped, verified, pushed to main)
+- [x] **Client-held E2E keys**: X25519 device keypairs (private never leaves device), server stores pubkeys only, v2 envelopes via ECDH+HKDF+Fernet, blind relay store-and-forward. Server-verified blind: ciphertext at rest, full client roundtrip through server store.
+- [x] **SLM provider slot**: llama_cpp/transformers/onnx backends, env-configured weights path, status endpoint, fail-soft escalate to Groq. SLM-zone chat integration with usage logging — weights drop in with zero code change.
+- [x] **Wake-word + streaming voice**: PCM energy VAD, configurable keyword/threshold/cooldown, stream sessions with speech-end detection auto-transcribing via whisper.
+- [x] **Spend optimizer**: per-task cost history, cheapest-capable routing policy (auto/groq-always/local-max), `/usage/optimize` report with projected SLM savings.
+- [x] **Public share links**: unguessable expiring revocable capability URLs, read-only goal progress HTML, no-auth view, full lifecycle verified (200 → revoke → 404).
+- [x] **Eval-gated auto-deploy**: `scripts/release-gate.sh` (evals + docker build + import smoke), CI release workflow auto-tagging `[release]` commits.
+- [x] **Research digests**: interest topics CRUD, depth-1 nightly sweeps with citation nudges, `research_digest` scheduler kind.
+
 ## v0.4.x — ✅ DONE: outfit planner + bill splitting scale-up (chat-driven)
 - [x] **Outfit**: calendar-aware occasion looks, 7-day no-repeat week plan, trip pack-a-bag with live weather, learned item scores (likes/wears/dislikes), laundry-cycle guard + reset, photo intake via vision. Chat: `plan my outfits`, `what should i wear to …`, `pack for N days in …`, `i wore …`, `laundry done`, `add … to wardrobe`.
 - [x] **Bills**: chat quick-split, settle-up with one-tap UPI links, member UPI ids, monthly repeats (scheduler-posted), house ledger, receipt-scan drafts via vision, team-house links. Chat: `split 1200 for dinner with flat`, `settle up flat`, `repeat rent 9000 monthly in flat`, `house ledger for flat`.
@@ -29,20 +38,13 @@
 - [x] **Reliability**: per-IP rate limits (heavy endpoints 60/min), request-id tracing, device presence + offline outbox.
 - [x] **DevOps**: Dockerfile, compose, GitHub Actions CI, versioned `/updates/latest`.
 
-## Next (v0.5) — full versions of v0.4 foundations, vs Instinct & Muse
-1. **Client-held E2E keys**: graduate relay-lite to true end-to-end (X25519 device keys, server never holds plaintext keys). Instinct does cloud sync; we keep the local-first guarantee.
-2. **Bundled SLM weights**: graduate confidence routing from patterns to an on-device small model; Groq only on low confidence. Zero-latency, zero-cost default.
-3. **Wake-word + streaming voice**: hands-free surface with barge-in; opponents treat voice as a feature, we make it a surface.
-
 ## Next (v0.6) — the separation round
-7. **Plugin sandbox runtime**: marketplace packs run in a restricted executor (allow-listed tools, file-scope jail, network off by default) — signed + sandboxed beats Muse's unsigned extensions.
-8. **Cross-device handoff**: start a goal on desktop, continue mid-step on phone — orchestrator state streams over the encrypted relay with conflict-free resume.
-9. **Proactive research digests**: nightly topic sweeps per user interest compiled into the 8am briefing with citations — Instinct answers questions; we deliver answers first.
-10. **Spend optimizer**: auto-pick cheapest capable model per task from usage history; show saved-$ on the dashboard — turns the cost moat into a growth loop.
-11. **Public share links**: read-only goal/progress pages with revocation — viral loop for team adoption that neither competitor has in this form.
-12. **Eval-gated auto-deploy**: CI runs the full 32-eval battery + live smoke on a scratch DB; green builds tag releases automatically.
+1. **Plugin sandbox runtime**: marketplace packs run in a restricted executor (allow-listed tools, file-scope jail, network off by default) — signed + sandboxed beats Muse's unsigned extensions.
+2. **Cross-device handoff**: start a goal on desktop, continue mid-step on phone — orchestrator state streams over the encrypted relay with conflict-free resume.
+3. **SLM weights drop-in**: download + quantize a small open model into the ready slot; flip SLM-zone traffic local and watch saved-$ compound.
+4. **Merchant services Phase 1**: machine-readable schemas for cabs/technicians/food (see HANDOFF.md thread A) — the India wedge.
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 37 nightly evals gating every release — reliability story.
+- 48 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.
