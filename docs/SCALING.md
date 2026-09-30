@@ -16,15 +16,15 @@
 - **Reliability**: per-IP rate limits (heavy endpoints 60/min), request-id tracing, device presence + offline outbox.
 - **DevOps**: Dockerfile, compose, GitHub Actions CI, versioned `/updates/latest`.
 
-## Next (v0.3) — 
-1. **On-device small model**: route trivial chat locally (zero latency/cost), escalate to Groq only when stuck. Instinct is cloud-only; Muse rents models — local-first is the moat.
-2. **Skill marketplace**: versioned, signed community skills with sandbox permissions. Muse has extensions; ours are signed + policy-gated by vault-2.
-3. **E2E-encrypted sync**: replace LAN token sync with encrypted cloud relay (Supabase) so phone works off-network. Instinct does this; we keep the local-first guarantee.
-4. **Voice loop**: wake-word + streaming STT/TTS for hands-free; opponents treat voice as a feature, we make it a surface.
-5. **Usage-based cost dashboard**: per-task token spend + budgets — nobody in this class shows it; founders love it.
-6. **Team mode**: shared goal trees + multi-user approvals (the wedge into SMBs that Instinct/Muse price out).
+## Next (v0.4) — vs Instinct & Muse
+1. **E2E-encrypted sync relay**: phone works off-LAN via encrypted Supabase relay; server never sees plaintext. Instinct does cloud sync; we keep the local-first guarantee.
+2. **On-device small model (full)**: graduate the fast lane from patterns to a bundled SLM; escalate to Groq only on low confidence. Zero-latency, zero-cost default.
+3. **Wake-word + streaming voice**: hands-free surface with barge-in; opponents treat voice as a feature, we make it a surface.
+4. **Marketplace sandbox enforcement**: per-pack permission gates (loops.write, files.read…) actually enforced at install + runtime, plus publisher reputation.
+5. **Team billing + roles**: per-seat usage rollups, admin/member/viewer roles, team budgets — the SMB wedge Instinct/Muse price out.
+6. **Scheduled autonomy**: cron-style goal auto-steps (nightly research sweeps, morning briefings compiled, not just pushed).
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 22+ nightly evals gating every release — reliability story.
+- 32 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.
