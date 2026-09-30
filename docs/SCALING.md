@@ -1,5 +1,11 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## hierarchy STEP 3 — ✅ DONE: observe/verify/checkpoint (correctness gate)
+- [x] `app/verify.py`: `execute()` runs one validated action with evidence; `verify()` re-reads world state (file exists, event on calendar, loop open, HTTP 200, draft id); `run_verified()` retries once, then escalates.
+- [x] Orchestrator walks subtasks: propose → execute → verify → checkpoint subtask done ONLY on verify-pass; parent task completes when all subtasks verified; tasks without subtasks keep the legacy path.
+- [x] Fixed layering bug found by evals: `_next_task` queried the orchestrator DB instead of goal tables.
+- [x] Live-verified auto-step end-to-end. Next: step 4 planner pack + 60-example evals.
+
 ## hierarchy STEP 2 — ✅ DONE: action registry + validation (contract only, no execution yet)
 - [x] `app/actions.py`: 12-action closed registry (args, types, effects, approval flags).
 - [x] `validate()`: unknown actions rejected, required-arg/type checks, workspace jail, http(s) URLs, sensitive actions flagged for approval.
@@ -71,5 +77,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 61 nightly evals gating every release — reliability story.
+- 64 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

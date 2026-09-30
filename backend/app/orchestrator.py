@@ -50,7 +50,11 @@ def _log(gid: int, tid: int, verdict: str, note: str = ""):
 
 def _next_task(gid: int):
     """Shallowest todo leaf: earliest objective/project position first."""
-    db = _db()
+    try:
+        from app.goaltrees import _db as _gdb
+    except ImportError:
+        from goaltrees import _db as _gdb
+    db = _gdb()
     r = db.execute(
         """SELECT t.id, t.title, t.kind FROM gtasks t
            JOIN projects p ON p.id=t.pid JOIN objectives o ON o.id=p.oid
@@ -112,6 +116,17 @@ def auto_step(gid: int, device: str = "orchestrator") -> dict:
         _gt.set_task(nxt["id"], "doing", "watched by orchestrator")
         _log(gid, nxt["id"], "wait")
         return {"ok": True, "reply": f"Watching: '{nxt['title']}'."}
+    # step 3: tasks WITH subtasks walk the verified path (propose -> execute ->
+    # verify -> checkpoint). Tasks without subtasks keep the legacy whole-task run.
+    all_subs = _gt.list_subtasks(nxt["id"])
+    subs = [s for s in all_subs if s["status"] in ("todo", "failed")]
+    if all_subs and not subs:
+        _gt.set_task(nxt["id"], "done", "all subtasks verified")
+        _log(gid, nxt["id"], "accept", "all subtasks verified")
+        return {"ok": True, "task": nxt["title"],
+                "reply": f"Task '{nxt['title']}' complete — all subtasks verified ✓"}
+    if subs and nxt["kind"] in ("research", "create", "browse"):
+        return _auto_substep(gid, tree, nxt, subs[0], device)
     out = _gt.run_task(nxt["id"], device)
     result = (out.get("result") or "") if isinstance(out, dict) else ""
     c = _critic(nxt["title"], result)
@@ -125,6 +140,63 @@ def auto_step(gid: int, device: str = "orchestrator") -> dict:
                 for p in o["projects"] for t in p["tasks"] if t["status"] in ("todo", "failed")])
     return {"ok": True, "task": nxt["title"], "tasks_left": left,
             "reply": f"Done: '{nxt['title']}' ✓ ({left} left in '{tree['title']}')."}
+
+
+def _auto_substep(gid: int, tree: dict, task: dict, sub: dict, device: str) -> dict:
+    """One verified subtask: propose actions, run each through execute+verify,
+    checkpoint the subtask ONLY on verify-pass. Parent task completes when all
+    subtasks are done — counted, not claimed."""
+    try:
+        try:
+            from app.actions import propose
+            from app.goaltrees import set_subtask, list_subtasks
+            from app.verify import run_verified
+        except ImportError:
+            from actions import propose
+            from goaltrees import set_subtask, list_subtasks
+            from verify import run_verified
+    except Exception as e:
+        return {"ok": False, "error": f"no verify engine: {e}"}
+    set_subtask(sub["id"], "doing")
+    notes = []
+    for step in propose(sub["title"], task["kind"]):
+        # fill blank args from subtask context where the mapping is unambiguous
+        args = dict(step.get("args", {}))
+        if step["action"] == "add_loop" and not args.get("title"):
+            args["title"] = sub["title"][:200]
+        if step["action"] == "web_search" and not args.get("query"):
+            args["query"] = sub["title"][:200]
+        if step["action"] == "notify_user" and not args.get("text"):
+            args["text"] = sub["title"][:200]
+        if step["action"] == "create_file" and not args.get("path"):
+            slug = "".join(c if c.isalnum() else "-" for c in sub["title"].lower()).strip("-")[:40] or "note"
+            args["path"] = f"{slug}.md"
+            args["content"] = args.get("content", "") or f"# {sub['title']}\n"
+        r = run_verified({"action": step["action"], "args": args}, device)
+        notes.append(f"{step['action']}: {r['evidence'][:120]}")
+        if r.get("waiting"):
+            set_subtask(sub["id"], "waiting", r["evidence"][:500])
+            _log(gid, task["id"], "wait", sub["title"])
+            return {"ok": True, "waiting": True,
+                    "reply": f"Paused for you on '{sub['title']}' ({r['evidence'][:150]})."}
+        if not r["verified"]:
+            set_subtask(sub["id"], "todo", "verify failed: " + r["evidence"][:400])
+            _log(gid, task["id"], "redo", sub["title"] + " :: " + r["evidence"][:200])
+            return {"ok": True, "redone": True,
+                    "reply": f"Subtask '{sub['title']}' failed verification — requeued ({r['evidence'][:150]})."}
+    set_subtask(sub["id"], "done", "; ".join(notes)[:1500])
+    _log(gid, task["id"], "accept", sub["title"])
+    remaining = [s for s in list_subtasks(task["id"]) if s["status"] in ("todo", "failed")]
+    if not remaining:
+        try:
+            from app.goaltrees import set_task
+        except ImportError:
+            from goaltrees import set_task
+        set_task(task["id"], "done", f"all {len(list_subtasks(task['id']))} subtasks verified")
+    left_tasks = len([1 for o in tree.get("objectives", []) for p in o["projects"]
+                      for t in p["tasks"] if t["status"] in ("todo", "failed")])
+    return {"ok": True, "task": task["title"], "subtask": sub["title"], "tasks_left": left_tasks,
+            "reply": f"Verified: '{sub['title']}' ✓ ({'; '.join(notes)[:150]})."}
 
 
 def history(gid: int, limit: int = 20):

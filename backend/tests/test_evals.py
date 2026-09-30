@@ -695,3 +695,78 @@ def test_actions_propose():
     assert actions.propose("Research investors")[0]["action"] == "web_search"
     assert actions.propose("Create pitch deck")[0]["action"] == "create_file"
     assert len(actions.propose("do the thing")) == 1  # safe default, never empty
+
+# ---- hierarchy step 3 evals: observe/verify/checkpoint ----
+
+def test_verify_create_read_roundtrip(tmp_path, monkeypatch):
+    import os as _os
+    import verify
+    import paths as _paths
+    ws = _paths.ws()
+    probe = "verify-step3-probe.md"
+    try:
+        w = verify.execute({"action": "create_file", "args": {"path": probe, "content": "# hi"}})
+        assert w["ok"]
+        v = verify.verify({"action": "create_file", "args": {"path": probe}}, w)
+        assert v["pass"] and "exists" in v["evidence"]
+        r = verify.execute({"action": "read_file", "args": {"path": probe}})
+        assert r["ok"] and verify.verify({"action": "read_file", "args": {"path": probe}}, r)["pass"]
+        assert verify.verify({"action": "create_file", "args": {}}, {"path": os.path.join(ws, "nope.md")})["pass"] is False
+    finally:
+        try:
+            _os.remove(_os.path.join(ws, probe))
+        except Exception:
+            pass
+
+
+def test_run_verified_retry_and_checkpoint(tmp_path, monkeypatch):
+    import os as _os
+    import verify
+    import goaltrees
+    import paths as _paths
+    monkeypatch.setattr(goaltrees, "DB", str(tmp_path / "v.db"))
+    gid = goaltrees.create_from_spec("V", {"objectives": [{"title": "O", "projects": [{"title": "P", "tasks": [
+        {"title": "Write sync note", "kind": "create", "subtasks": ["Create sync note file"]}]}]}]})["id"]
+    tid = goaltrees.get_tree(gid)["objectives"][0]["projects"][0]["tasks"][0]["id"]
+    sid = goaltrees.list_subtasks(tid)[0]["id"]
+    ws, probe = _paths.ws(), "sync-note-step3-probe.md"
+    try:
+        r = verify.run_verified({"action": "create_file", "args": {"path": probe, "content": "# sync"}})
+        assert r["verified"]
+        goaltrees.set_subtask(sid, "done", r["evidence"])
+        got = [s for s in goaltrees.list_subtasks(tid) if s["id"] == sid][0]
+        assert got["status"] == "done"  # checkpoint only after verify-pass
+    finally:
+        try:
+            _os.remove(_os.path.join(ws, probe))
+        except Exception:
+            pass
+
+
+def test_orchestrator_walks_subtasks(tmp_path, monkeypatch):
+    import os as _os
+    import orchestrator
+    import goaltrees
+    import paths as _paths
+    monkeypatch.setattr(goaltrees, "DB", str(tmp_path / "o.db"))
+    monkeypatch.setattr(orchestrator, "DB", str(tmp_path / "o2.db"))
+    try:
+        import app.goaltrees as _ag
+        monkeypatch.setattr(_ag, "DB", str(tmp_path / "o.db"))
+    except ImportError:
+        pass
+    ws, slug = _paths.ws(), "log-progress-note-step3-probe.md"
+    created = "create-progress-log-file.md"  # slug _auto_substep derives from subtask title
+    try:
+        gid = goaltrees.create_from_spec("Walk", {"objectives": [{"title": "O", "projects": [{"title": "P", "tasks": [
+            {"title": "Log progress note", "kind": "create", "subtasks": ["Create progress log file"]}]}]}]})["id"]
+        r = orchestrator.auto_step(gid, "test")
+        assert r["ok"] and "Verified" in r["reply"]
+        subs = goaltrees.list_subtasks(goaltrees.get_tree(gid)["objectives"][0]["projects"][0]["tasks"][0]["id"])
+        assert subs[0]["status"] == "done"
+    finally:
+        for f in (slug, created):
+            try:
+                _os.remove(_os.path.join(ws, f))
+            except Exception:
+                pass
