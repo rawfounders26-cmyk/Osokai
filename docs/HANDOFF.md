@@ -61,6 +61,9 @@
 #    cross-device handoff, SLM weights drop-in, merchant-services Phase 1.
 
 ## Session log
+- 2026-09-30: hierarchy STEP 1 shipped (subtask table, insert/get/set, compile rule, 3 evals,
+  live chat compile verified with 16 subtasks) → 58 tests. Next: step 2 (action registry).
+  Constraints locked: chat-only entry, no new screens, additive wiring.
 - 2026-09-30: nudge-hygiene fix from screenshot (basename paths, orphan goal/handoff filter,
   2-line home alerts) + stale probe cleanup → 55 tests.
 - 2026-09-30: hardening round shipped + pushed (54 tests: recurring fix, WAL helper, memory locks,

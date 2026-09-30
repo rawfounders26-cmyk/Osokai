@@ -1,4 +1,4 @@
-"""Goal trees — Goal → Objectives → Projects → Tasks, executable.
+"""Goal trees — Goal → Objectives → Projects → Tasks → Subtasks, executable.
 Templates (incl. the apartment Ex-14 pattern) seed instant trees; anything else
 is compiled by the LLM into the same shape. Leaves execute via agent tools."""
 import json
@@ -89,6 +89,9 @@ def _db():
     db.execute("""CREATE TABLE IF NOT EXISTS gtasks(
         id INTEGER PRIMARY KEY, pid INTEGER, title TEXT, kind TEXT,
         status TEXT DEFAULT 'todo', result TEXT DEFAULT '', pos INTEGER)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS subtasks(
+        id INTEGER PRIMARY KEY, tid INTEGER, title TEXT,
+        status TEXT DEFAULT 'todo', result TEXT DEFAULT '', pos INTEGER)""")
     return db
 
 
@@ -107,8 +110,16 @@ def _insert_tree(db, title, source, spec):
                 name = t.get("title", t) if isinstance(t, dict) else t
                 if kind not in KINDS:
                     kind = "research"
-                db.execute("INSERT INTO gtasks(pid, title, kind, pos) VALUES(?,?,?,?)",
-                           (pid, name, kind, ti))
+                tc = db.execute("INSERT INTO gtasks(pid, title, kind, pos) VALUES(?,?,?,?)",
+                                (pid, name, kind, ti))
+                tid = tc.lastrowid
+                # subtasks: only for multi-step/outside-world tasks, max 6, atomic actions stay flat
+                subs = t.get("subtasks", []) if isinstance(t, dict) else []
+                for si, s in enumerate(subs[:6]):
+                    stitle = s.get("title", s) if isinstance(s, dict) else s
+                    if str(stitle).strip():
+                        db.execute("INSERT INTO subtasks(tid, title, pos) VALUES(?,?,?)",
+                                   (tid, str(stitle).strip()[:300], si))
     db.commit()
     return gid
 
@@ -136,8 +147,12 @@ def compile_goal(title: str):
         from grok_client import chat_with_grok
     prompt = ("Decompose this goal into JSON ONLY, no other text. Shape: "
               '{"objectives": [{"title": "...", "projects": [{"title": "...", "tasks": '
-              '[{"title": "...", "kind": "research|create|browse|approval|human|wait"}]}]}]}. '
+              '[{"title": "...", "kind": "research|create|browse|approval|human|wait", '
+              '"subtasks": ["..."]}]}]}]}. '
               "5 or fewer objectives, 2-4 tasks per project. "
+              "RULE: give a task 2-6 subtasks ONLY if it needs more than one step or touches "
+              "the outside world (calendar, email, browser, people, payments). "
+              "Atomic single actions (open a site, look something up) get NO subtasks. "
               f"Goal: {title}")
     import json as _j
     try:
@@ -168,7 +183,11 @@ def get_tree(gid: int):
             p = {"id": pid, "title": pt, "tasks": []}
             for tid, tt, kind, st, res in db.execute(
                     "SELECT id, title, kind, status, result FROM gtasks WHERE pid=? ORDER BY pos", (pid,)):
-                p["tasks"].append({"id": tid, "title": tt, "kind": kind, "status": st, "result": res[:300]})
+                subs = [{"id": s[0], "title": s[1], "status": s[2], "result": (s[3] or "")[:300]}
+                        for s in db.execute(
+                            "SELECT id, title, status, result FROM subtasks WHERE tid=? ORDER BY pos", (tid,))]
+                p["tasks"].append({"id": tid, "title": tt, "kind": kind, "status": st,
+                                   "result": res[:300], "subtasks": subs})
                 o["total"] += 1
                 nt += 1
                 if st == "done":
@@ -196,6 +215,19 @@ def set_task(tid: int, status: str, result: str = ""):
     db.execute("UPDATE gtasks SET status=?, result=? WHERE id=?", (status, result[:2000], tid))
     db.commit()
     return {"ok": True}
+
+
+def set_subtask(sid: int, status: str, result: str = ""):
+    db = _db()
+    db.execute("UPDATE subtasks SET status=?, result=? WHERE id=?", (status, result[:2000], sid))
+    db.commit()
+    return {"ok": True}
+
+
+def list_subtasks(tid: int):
+    db = _db()
+    rows = db.execute("SELECT id, title, status, result FROM subtasks WHERE tid=? ORDER BY pos", (tid,)).fetchall()
+    return [{"id": r[0], "title": r[1], "status": r[2], "result": (r[3] or "")[:300]} for r in rows]
 
 
 def run_task(tid: int, device: str = "api"):

@@ -606,3 +606,49 @@ def test_nudge_orphans_and_paths(tmp_path, monkeypatch):
     assert all(n["key"] != "goal:424242" for n in shown)  # deleted goal filtered
     assert any(n["key"] == "loop:9" for n in shown)  # unrelated kinds untouched
     assert "C:\\\\" not in (shown[0]["text"] if shown else "") and ":\\\\" not in "".join(n["text"] for n in shown)
+
+# ---- hierarchy step 1 evals: subtask level (structure only, no execution) ----
+
+def test_subtask_insert_and_tree(tmp_path, monkeypatch):
+    import goaltrees
+    monkeypatch.setattr(goaltrees, "DB", str(tmp_path / "st.db"))
+    spec = {"objectives": [{"title": "O", "projects": [{"title": "P", "tasks": [
+        {"title": "Schedule meeting with investor", "kind": "create",
+         "subtasks": ["Check calendar", "Identify slots", "Create event", "Send invitation"]},
+        {"title": "Open the investor website", "kind": "browse"},
+        "plain string task",
+    ]}]}]}
+    gid = goaltrees.create_from_spec("Fundraise", spec)["id"]
+    t = goaltrees.get_tree(gid)
+    tasks = t["objectives"][0]["projects"][0]["tasks"]
+    assert len(tasks[0]["subtasks"]) == 4  # multi-step task decomposed
+    assert tasks[1]["subtasks"] == []  # atomic action stays flat
+    assert tasks[2]["subtasks"] == []  # string tasks stay flat
+    assert t["progress"] == 0  # progress math unchanged (task-level)
+
+
+def test_subtask_status_and_cap(tmp_path, monkeypatch):
+    import goaltrees
+    monkeypatch.setattr(goaltrees, "DB", str(tmp_path / "st2.db"))
+    spec = {"objectives": [{"title": "O", "projects": [{"title": "P", "tasks": [
+        {"title": "Big task", "kind": "create",
+         "subtasks": [f"s{i}" for i in range(10)]},  # over cap
+    ]}]}]}
+    gid = goaltrees.create_from_spec("Cap", spec)["id"]
+    subs = goaltrees.list_subtasks(goaltrees.get_tree(gid)["objectives"][0]["projects"][0]["tasks"][0]["id"])
+    assert len(subs) == 6  # hard cap enforced
+    assert goaltrees.set_subtask(subs[0]["id"], "done", "ok")["ok"] is True
+    got = [s for s in goaltrees.list_subtasks(
+        goaltrees.get_tree(gid)["objectives"][0]["projects"][0]["tasks"][0]["id"]) if s["id"] == subs[0]["id"]][0]
+    assert got["status"] == "done"
+
+
+def test_old_trees_render_with_empty_subtasks(tmp_path, monkeypatch):
+    import goaltrees  # templates compiled before subtasks existed must still render
+    monkeypatch.setattr(goaltrees, "DB", str(tmp_path / "st3.db"))
+    gid = goaltrees.create_from_template("trip", "Probe trip")["id"]
+    t = goaltrees.get_tree(gid)
+    for o in t["objectives"]:
+        for p in o["projects"]:
+            for task in p["tasks"]:
+                assert task["subtasks"] == []

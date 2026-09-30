@@ -1,5 +1,11 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## hierarchy STEP 1 — ✅ DONE: subtask level (structure only, chat entry unchanged)
+- [x] `subtasks` table + insert/get/set, `get_tree()` nests subtasks per task, progress math untouched.
+- [x] Compile rule: 2–6 subtasks only for multi-step/outside-world tasks, atomic actions stay flat, hard cap 6.
+- [x] Live-verified via chat ("help me prepare… interview" → 3 objectives, 8 tasks, 16 subtasks). No new screens, additive keys only.
+- [x] Next: step 2 action registry → step 3 observe/verify/checkpoint → step 4 planner pack + 60-example evals.
+
 ## hardening round — ✅ DONE (no new features; strength only)
 - [x] **Recurring-bill double-post fixed**: `last_post` update never committed (split-connection bug) — scheduler reposted every 30s. Single-connection fix + idempotency eval.
 - [x] **Shared DB helper** (`app/db.py`): WAL mode + 5s busy timeout + FK pragmas across all 26 modules. Real DB confirmed on WAL.
@@ -59,5 +65,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 55 nightly evals gating every release — reliability story.
+- 58 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.
