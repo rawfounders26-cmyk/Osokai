@@ -6,6 +6,11 @@ import os
 
 from cryptography.fernet import Fernet, InvalidToken
 
+try:
+    from app.paths import data as _pdata
+except ImportError:
+    from paths import data as _pdata
+
 def _key() -> bytes:
     raw = os.getenv("OSOKAI_VAULT_KEY", "")
     if not raw:
@@ -149,7 +154,7 @@ def lock_status():
 # ---- audit log: every AI/human access attempt, allow + deny ----
 import sqlite3 as _sql
 
-_DB = os.path.join(os.path.dirname(__file__), "..", "osokai.db")
+_DB = _pdata("osokai.db")
 
 def _adb():
     db = _sql.connect(os.path.normpath(_DB), check_same_thread=False)

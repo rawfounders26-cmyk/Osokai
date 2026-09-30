@@ -6,7 +6,7 @@ import { useFocusEffect } from 'expo-router';
 import { loopsList, loopClose, onSync } from '../services/api';
 import { colors, radius, spacing } from '../services/theme';
 
-const KIND_ICON = { reply: '💬', call: '📞', save: '🔖', promise: '✓', habit: '🔁' };
+const KIND_ICON = { reply: '💬', call: '📞', save: '🔖', promise: '✓', habit: '🔁', shopping: '🛒', trip: '🧳', email: '✉️', cal: '📅', wardrobe: '👕' };
 
 function dueStr(ts) {
   if (!ts) return '';

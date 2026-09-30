@@ -29,6 +29,21 @@ def is_goal(text: str) -> bool:
                                  "remind", "reminder", "loop", "habit",
                                  "docs", "research", "agent", "rag", "code", "repo", "pytest"))
 
+GOAL_HINTS = ("launch", "startup", "fundrais", "apartment", "flat", "house hunt",
+              "vacation", "honeymoon", "wedding", "trip plan", "plan a", "weekend",
+              "help me", "move to", "relocat",
+              "new job", "job hunt", "career", "exam prep", "prepare for", "organize my",
+              "get fit", "fitness", "60 days", "30 days", "plan my", "start a company",
+              "raise ", "grow my", "100k", "100,000")
+
+
+def is_big_goal(text: str) -> bool:
+    """Multi-step project-like goal -> compile a goal tree. Single actions stay tasks."""
+    tl = " " + text.strip().lower() + " "
+    if len(text.split()) < 4:
+        return False
+    return any(h.lower() in tl for h in GOAL_HINTS)
+
 TOOLS = [
     {"type": "function", "function": {"name": "open_url", "description": "Open a URL in Chrome (hosts the Osok-AI extension). Use full https URLs.",
         "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
@@ -64,6 +79,14 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {"origin": {"type": "string"}, "dest": {"type": "string"}, "days": {"type": "integer"}}, "required": ["origin", "dest"]}}},
     {"type": "function", "function": {"name": "img_op", "description": "Edit workspace image. op: resize|convert|compress|thumb|meme. resize needs w (h optional); convert needs fmt; compress needs q; thumb needs s; meme needs top+bottom text.",
         "parameters": {"type": "object", "properties": {"op": {"type": "string"}, "file": {"type": "string"}, "w": {"type": "integer"}, "h": {"type": "integer"}, "fmt": {"type": "string"}, "q": {"type": "integer"}, "s": {"type": "integer"}, "top": {"type": "string"}, "bottom": {"type": "string"}}, "required": ["op", "file"]}}},
+    {"type": "function", "function": {"name": "img_generate", "description": "Generate an AI image from text (Flux, free) into workspace/.",
+        "parameters": {"type": "object", "properties": {"prompt": {"type": "string"}}, "required": ["prompt"]}}},
+    {"type": "function", "function": {"name": "profile_get", "description": "Read user identity/budget (name/city/budget). Secrets never included.",
+        "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {"name": "profile_set", "description": "Save identity field: name/city/upi_id/budget_default/currency.",
+        "parameters": {"type": "object", "properties": {"key": {"type": "string"}, "value": {"type": "string"}}, "required": ["key", "value"]}}},
+    {"type": "function", "function": {"name": "pref_add", "description": "Remember a preference. domain: shopping/style/general.",
+        "parameters": {"type": "object", "properties": {"domain": {"type": "string"}, "pref": {"type": "string"}}, "required": ["domain", "pref"]}}},
     {"type": "function", "function": {"name": "shell", "description": "Run an allowlisted shell command inside workspace/ (python, pytest, node, npm, git, dir).",
         "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}, "required": ["cmd"]}}},
     {"type": "function", "function": {"name": "git", "description": "Safe git ops in workspace: status|diff|log|commit|init. commit needs msg.",
@@ -102,6 +125,8 @@ SYS = ("You are Osok-AI, an agent that ACTS. Routing rules (strict): "
     "SIMPLE one-shot views (open a site/video/song/episode for the user to watch) -> open_url (system Chrome, extension completes playback). "
     "COMPLEX work (research, files, plans, multi-step browser flows, logins, forms, scraping) -> SAME VM: use browser/fetch_url/write_file/make_* tools, save everything in workspace/. "
     "Never use open_url for complex work output; never save simple views as files. "
+    "BUY JOURNEY: search/compare first (web_search, fetch_url, optional compare file), then STOP — payment needs human approval, never auto-pay. "
+    "After approval, point at the shop URL and tell them to use extension Autofill. "
     "Use tools to complete the goal, then confirm in one line. Never say you cannot control the device.")
 
 def _browser(args: str) -> str:
@@ -242,16 +267,21 @@ def _run_tool(name: str, args: dict) -> str:
             return _dev.git(args.get("op", "status"), args.get("msg", ""))
         except Exception as e:
             return f"(dev error: {e})"
-    if name in ("rag_ask", "research", "build_agent"):
+    if name in ("rag_ask", "research", "build_agent", "img_generate"):
         try:
             from app.rag import search as _rsearch
             from app.research import deep_research as _dr, build_agent as _ba
             from app.grok_client import chat_with_grok as _chat
+            from app.img import img_generate as _gen
         except ImportError:
             from rag import search as _rsearch
             from research import deep_research as _dr, build_agent as _ba
             from grok_client import chat_with_grok as _chat
+            from img import img_generate as _gen
         try:
+            if name == "img_generate":
+                r = _gen(args.get("prompt", ""))
+                return r if isinstance(r, str) else __import__("json").dumps(r)
             if name == "rag_ask":
                 hits = _rsearch(args.get("q", ""), 5)
                 if not hits:
@@ -300,6 +330,19 @@ def _run_tool(name: str, args: dict) -> str:
             return _b.settle(int(args.get("gid", 0)), args.get("frm", ""), args.get("to", ""), float(args.get("amount", 0)))
         except Exception as e:
             return f"(bills error: {e})"
+    if name in ("profile_get", "profile_set", "pref_add"):
+        try:
+            from app import profile as _pr
+        except ImportError:
+            import profile as _pr
+        try:
+            if name == "profile_get":
+                return {"profile": _pr.get_profile(), "prefs": _pr.get_prefs()}
+            if name == "profile_set":
+                return _pr.set_profile(args.get("key", ""), args.get("value", ""))
+            return _pr.add_pref(args.get("domain", "general"), args.get("pref", ""))
+        except Exception as e:
+            return f"(profile error: {e})"
     if name in ("wardrobe_add", "wardrobe_list", "outfit_suggest"):
         try:
             from app import wardrobe as _w
@@ -361,6 +404,16 @@ def run_goal(goal: str, max_steps: int = 8) -> str:
     url = "https://api.groq.com/openai/v1/chat/completions" if key.startswith("gsk_") else "https://api.x.ai/v1/chat/completions"
     roles = route_roles(goal)
     sys = SYS + (f"\nActing roles for this task: {', '.join(roles)}.\n{role_context(roles)}" if roles else "")
+    try:
+        from app.profile import context_block as _ctx
+    except ImportError:
+        try:
+            from profile import context_block as _ctx
+        except ImportError:
+            _ctx = lambda: ""
+    _uctx = _ctx()
+    if _uctx:
+        sys += f"\nUser context (identity+budgets+prefs; secrets are NEVER here):\n{_uctx}"
     # small toolset per task: builders only when the task makes files (keeps function-calling reliable)
     gl = goal.lower()
     want_make = any(w in gl for w in ("ppt", "excel", "xlsx", "sheet", "slide", "report", "write", "create", "make", "build", "prepare", "generate", "plan", "code", "presentation", "budget", "memo", "resize", "convert image", "compress", "thumbnail", "meme", "image", "photo", "picture"))
@@ -369,7 +422,7 @@ def run_goal(goal: str, max_steps: int = 8) -> str:
     want_loops = any(w in gl for w in ("remind", "reminder", "loop", "reply to", "call back", "follow up", " habit"))
     want_dev = any(w in gl for w in ("code", "test", "pytest", "debug", "repo", " git", "npm", "script", "run "))
     want_know = any(w in gl for w in ("research", "my docs", "workspace", "ask my", "agent", "rag", "deep"))
-    tools = [t for t in TOOLS if t["function"]["name"] in ("open_url", "open_app", "browser", "web_search", "fetch_url", "seo_check", "cal_add", "cal_list", "email_compose", "trip_plan")]
+    tools = [t for t in TOOLS if t["function"]["name"] in ("open_url", "open_app", "browser", "web_search", "fetch_url", "seo_check", "cal_add", "cal_list", "email_compose", "trip_plan", "profile_get", "profile_set", "pref_add")]
     if want_dev:
         tools += [t for t in TOOLS if t["function"]["name"] in ("shell", "git")]
     if want_know:
@@ -377,7 +430,7 @@ def run_goal(goal: str, max_steps: int = 8) -> str:
     if want_loops:
         tools += [t for t in TOOLS if t["function"]["name"] in ("loop_add", "loop_done", "loop_due")]
     if want_make:
-        tools += [t for t in TOOLS if t["function"]["name"] in ("make_pptx", "make_xlsx", "write_file", "run_tests", "img_op")]
+        tools += [t for t in TOOLS if t["function"]["name"] in ("make_pptx", "make_xlsx", "write_file", "run_tests", "img_op", "img_generate")]
     if want_bills:
         tools += [t for t in TOOLS if t["function"]["name"].startswith("bill_")]
     if want_wardrobe:

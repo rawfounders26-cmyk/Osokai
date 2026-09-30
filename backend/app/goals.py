@@ -2,7 +2,12 @@
 Background checker dedups alerts; bell + WS pick them up like notifications."""
 import hashlib, os, re, sqlite3, threading, time
 
-DB = os.path.join(os.path.dirname(__file__), "..", "osokai.db")
+try:
+    from app.paths import data as _pdata
+except ImportError:
+    from paths import data as _pdata
+
+DB = _pdata("osokai.db")
 
 def _db():
     db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)

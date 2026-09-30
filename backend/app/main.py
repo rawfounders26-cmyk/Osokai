@@ -5,7 +5,25 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPExcepti
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-load_dotenv()
+try:
+    from app.paths import env_file as _env_file
+except ImportError:
+    from paths import env_file as _env_file
+load_dotenv(_env_file())
+
+def _ensure_auth_token():
+    """Packaged app: no open-auth dev mode. Generate once into .env next to the exe."""
+    if os.getenv("OSOKAI_AUTH_TOKEN", ""):
+        return
+    import secrets as _s
+    new = "osokai_" + _s.token_urlsafe(24)
+    try:
+        open(_env_file(), "a").write(f"OSOKAI_AUTH_TOKEN={new}\n")
+    except Exception:
+        pass
+    os.environ["OSOKAI_AUTH_TOKEN"] = new
+
+_ensure_auth_token()
 try:
     from app.grok_client import chat_with_grok
     from app.memory import Memory
@@ -24,6 +42,46 @@ except ImportError:
 app = FastAPI(title="Osok-AI API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 mem = Memory()
+
+OSOKAI_VERSION = "0.2.0"
+
+# ---- reliability: request ids + per-IP rate limiting (abuse shield) ----
+import uuid as _uuid
+from fastapi.responses import JSONResponse as _JSONResponse
+_rl_hits: dict = {}
+
+@app.middleware("http")
+async def _reliability(request: Request, call_next):
+    rid = _uuid.uuid4().hex[:8]
+    ip = request.client.host if request.client else "?"
+    now = time.time()
+    heavy = request.url.path.startswith(("/chat", "/goaltrees/tasks", "/research"))
+    limit, window = (60, 60) if heavy else (600, 60)
+    bucket = _rl_hits.setdefault(ip, [])
+    while bucket and bucket[0] < now - window:
+        bucket.pop(0)
+    if len(bucket) >= limit:
+        return _JSONResponse({"detail": "rate limited — slow down"}, status_code=429,
+                             headers={"X-Request-Id": rid})
+    bucket.append(now)
+    try:
+        resp = await call_next(request)
+    except Exception:
+        return _JSONResponse({"detail": "internal error", "request_id": rid}, status_code=500)
+    resp.headers["X-Request-Id"] = rid
+    return resp
+
+@app.on_event("startup")
+async def _start_proactive():
+    import asyncio as _aio
+    try:
+        try:
+            from app.proactive import loop as _ploop
+        except ImportError:
+            from proactive import loop as _ploop
+        _aio.create_task(_ploop())
+    except Exception:
+        pass
 
 class ChatIn(BaseModel):
     message: str
@@ -54,6 +112,7 @@ class Hub:
 
 hub = Hub()
 _fails = {}
+_pairings = {}  # code -> {url, exp} (5-min TTL, in-memory by design)
 
 def state():
     return {"rev": hub.rev,
@@ -259,13 +318,106 @@ async def auth_rotate(_=Depends(need_auth)):
     await hub.push()
     return {"ok": True, "token": new}
 
+def _fillq():
+    try:
+        from app import fillq as _f
+    except ImportError:
+        import fillq as _f
+    return _f
+
+@app.post("/fill/request")
+async def fill_request(payload: dict, _=Depends(need_auth)):
+    r = _fillq().request_fill(payload.get("site", ""), payload.get("fields", "login"))
+    await hub.push()
+    return r
+
+@app.get("/fill/pending")
+def fill_pending(domain: str = "", _=Depends(need_auth)):
+    return {"pending": _fillq().pending_for(domain)}
+
+@app.post("/fill/{fid}/done")
+async def fill_done(fid: int, _=Depends(need_auth)):
+    r = _fillq().mark(fid, "done")
+    await hub.push()
+    return r
+
+@app.post("/fill/{fid}/captcha")
+async def fill_captcha(fid: int, _=Depends(need_auth)):
+    r = _fillq().mark(fid, "captcha")
+    await hub.push()
+    return r
+
+@app.post("/fill/{fid}/solved")
+async def fill_solved(fid: int, _=Depends(need_auth)):
+    r = _fillq().mark(fid, "pending")
+    await hub.push()
+    return r
+
+@app.post("/fill/{fid}/otp")
+async def fill_otp(fid: int, _=Depends(need_auth)):
+    """Extension pulls + burns the user-pasted OTP for this fill."""
+    return {"ok": True, "otp": _fillq().take_otp(fid)}
+
+@app.post("/pairing/code")
+async def pairing_code(payload: dict, _=Depends(need_auth)):
+    """Desktop shows a 6-char code; phone enters it instead of pasting URL+token. 5-min TTL."""
+    import secrets as _s
+    import socket as _so
+    code = "".join(_s.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(6))
+    url = (payload.get("url") or "").replace("127.0.0.1", "").replace("localhost", "")
+    if not url:
+        try:
+            s = _so.socket(_so.AF_INET, _so.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            url = f"http://{s.getsockname()[0]}:8765"
+            s.close()
+        except Exception:
+            url = ""
+    else:
+        import re as _re
+        m = _re.search(r":(\d+)", payload.get("url", ""))
+        port = m.group(1) if m else "8765"
+        try:
+            s = _so.socket(_so.AF_INET, _so.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            url = f"http://{s.getsockname()[0]}:{port}"
+            s.close()
+        except Exception:
+            pass
+    _pairings[code] = {"url": url, "exp": time.time() + 300}
+    for k in [k for k, v in _pairings.items() if v["exp"] < time.time()]:
+        _pairings.pop(k, None)
+    return {"ok": True, "code": code, "url": url}
+
+@app.post("/pairing/redeem")
+def pairing_redeem(payload: dict):
+    """No auth (the code IS the auth). Returns URL + token once, then burns."""
+    code = (payload.get("code") or "").strip().upper()
+    rec = _pairings.pop(code, None)
+    if not rec or rec["exp"] < time.time():
+        raise HTTPException(status_code=404, detail="bad or expired code")
+    return {"ok": True, "url": rec["url"], "token": os.getenv("OSOKAI_AUTH_TOKEN", "")}
+
 @app.post("/chat")
 async def chat(body: ChatIn, _=Depends(need_auth)):
+    try:
+        from app.system_tools import sanitize_reply as _san
+    except ImportError:
+        from system_tools import sanitize_reply as _san
+    # bare OTP paste: 4-8 digits go to the newest pending fill (encrypted, single-use)
+    import re as _re2
+    if _re2.match(r"^\d{4,8}$", body.message.strip()):
+        r = _fillq().set_otp(body.message.strip())
+        if r:
+            mem.add("user", "[otp pasted — value hidden]")
+            mem.add("Osok-AI", "OTP saved — the extension will fill it.")
+            await hub.push()
+            return {"reply": "OTP saved — the extension will fill it.", "approval_required": False, "action": "otp"}
     # loops capture first: "remind me to pay X" is a reminder, not a payment
     _pre, _ = intent_parse(body.message)
     if _pre and _pre.get("type") in ("loop_add", "loop_done"):
         mem.add("user", body.message)
-        reply = intent_run(_pre, body.device)
+        reply = _san(intent_run(_pre, body.device))
         mem.add("Osok-AI", reply)
         await hub.push()
         return {"reply": reply, "approval_required": False, "action": _pre["type"]}
@@ -327,13 +479,31 @@ async def chat(body: ChatIn, _=Depends(need_auth)):
     action, _ = intent_parse(body.message)
     if action:
         mem.add("user", body.message)
-        reply = intent_run(action, body.device)
+        reply = _san(intent_run(action, body.device))
         mem.add("Osok-AI", reply)
         await hub.push()
         out = {"reply": reply, "approval_required": False, "action": action["type"]}
         if action["type"] in ("youtube_play", "shop_browse", "open_url"):
             out["url"] = action.get("url", "")  # mobile opens directly / links it
         return out
+    # big multi-step goal from chat -> compile a goal tree (agent decides goal vs task here)
+    try:
+        from app.agent import is_big_goal as _is_big
+    except ImportError:
+        from agent import is_big_goal as _is_big
+    if _is_big(body.message):
+        try:
+            from app import goaltrees as _gtm
+        except ImportError:
+            import goaltrees as _gtm
+        mem.add("user", body.message)
+        r = _gtm.compile_goal(body.message.strip())
+        t = _gtm.get_tree(r["id"]) if r else None
+        n = sum(len(p["tasks"]) for o in (t["objectives"] if t else []) for p in o["projects"]) if t else 0
+        reply = f"Goal created: {body.message.strip()} ({len(t['objectives']) if t else 0} objectives, {n} tasks) — see Goals screen."
+        mem.add("Osok-AI", reply)
+        await hub.push()
+        return {"reply": reply, "approval_required": False, "action": "goal", "goal_id": r["id"] if r else None}
     # general agent: any other goal goes through the tool loop (browser/apps/search)
     if is_goal_text(body.message):
         import asyncio
@@ -345,7 +515,7 @@ async def chat(body: ChatIn, _=Depends(need_auth)):
         rid = _runs.create(body.message[:120])
         _runs.log_step(rid, f"started on {body.device}", 5)
         try:
-            reply = await asyncio.to_thread(agent_run, body.message)
+            reply = _san(await asyncio.to_thread(agent_run, body.message))
             _runs.log_step(rid, "tools finished", 90)
             _runs.complete(rid, reply)
         except Exception as e:
@@ -355,7 +525,7 @@ async def chat(body: ChatIn, _=Depends(need_auth)):
         await hub.push()
         return {"reply": reply, "approval_required": False, "action": "agent", "run_id": rid}
     mem.add("user", body.message)
-    reply = chat_with_grok(body.message)
+    reply = _san(chat_with_grok(body.message))
     mem.add("Osok-AI", reply)
     await hub.push()
     return {"reply": reply, "approval_required": False}
@@ -530,6 +700,95 @@ def share_list(_=Depends(need_auth)):
         from share import list_shared
     return {"shared": list_shared()}
 
+# ---- goal trees: Goal → Objectives → Projects → Tasks ----
+def _gt():
+    try:
+        from app import goaltrees as _g
+    except ImportError:
+        import goaltrees as _g
+    return _g
+
+@app.get("/goaltrees")
+def gt_list(_=Depends(need_auth)):
+    return {"goals": _gt().list_trees()}
+
+@app.post("/goaltrees/template")
+async def gt_template(payload: dict, _=Depends(need_auth)):
+    r = _gt().create_from_template(payload.get("key", ""), payload.get("title", ""))
+    if not r["ok"]:
+        raise HTTPException(status_code=400, detail=r["error"])
+    await hub.push()
+    return r
+
+@app.post("/goaltrees/compile")
+async def gt_compile(payload: dict, _=Depends(need_auth)):
+    if not payload.get("title", "").strip():
+        raise HTTPException(status_code=400, detail="title required")
+    r = _gt().compile_goal(payload["title"].strip())
+    await hub.push()
+    return r
+
+@app.get("/goaltrees/{gid}")
+def gt_get(gid: int, _=Depends(need_auth)):
+    t = _gt().get_tree(gid)
+    if not t:
+        raise HTTPException(status_code=404, detail="goal not found")
+    return t
+
+@app.post("/goaltrees/tasks/{tid}/run")
+async def gt_run(tid: int, payload: dict = None, _=Depends(need_auth)):
+    import asyncio as _aio
+    gt = _gt()
+    r = await _aio.to_thread(gt.run_task, tid, (payload or {}).get("device", "api"))
+    await hub.push()
+    return r
+
+# ---- orchestrator: autonomous planner -> executor -> critic steps ----
+@app.post("/goaltrees/{gid}/auto-step")
+async def gt_auto_step(gid: int, payload: dict = None, _=Depends(need_auth)):
+    import asyncio as _aio
+    try:
+        from app.orchestrator import auto_step
+    except ImportError:
+        from orchestrator import auto_step
+    r = await _aio.to_thread(auto_step, gid, (payload or {}).get("device", "orchestrator"))
+    await hub.push()
+    return r
+
+@app.get("/goaltrees/{gid}/history")
+def gt_orch_history(gid: int, _=Depends(need_auth)):
+    try:
+        from app.orchestrator import history
+    except ImportError:
+        from orchestrator import history
+    return {"history": history(gid)}
+
+# ---- profile: identity (never secrets) ----
+def _prof():
+    try:
+        from app import profile as _p
+    except ImportError:
+        import profile as _p
+    return _p
+
+@app.get("/profile")
+def profile_get(_=Depends(need_auth)):
+    return {"profile": _prof().get_profile(), "prefs": _prof().get_prefs()}
+
+@app.post("/profile")
+async def profile_set(payload: dict, _=Depends(need_auth)):
+    r = _prof().set_profile(payload.get("key", ""), payload.get("value", ""))
+    if not r["ok"]:
+        raise HTTPException(status_code=400, detail=r["error"])
+    await hub.push()
+    return r
+
+@app.post("/profile/prefs")
+async def profile_pref(payload: dict, _=Depends(need_auth)):
+    r = _prof().add_pref(payload.get("domain", "general"), payload.get("pref", ""))
+    await hub.push()
+    return r
+
 # ---- RAG: ingest + ask over workspace docs ----
 @app.post("/rag/ingest")
 async def rag_ingest(payload: dict, _=Depends(need_auth)):
@@ -563,6 +822,66 @@ def rag_stats(_=Depends(need_auth)):
     except ImportError:
         from rag import stats
     return stats()
+
+@app.post("/rag/answer")
+async def rag_answer(payload: dict, _=Depends(need_auth)):
+    """Grounded Q&A: hybrid retrieval + synthesized reply with citations."""
+    try:
+        from app.rag import answer
+    except ImportError:
+        from rag import answer
+    return answer(payload.get("q", ""), int(payload.get("k", 5)))
+
+# ---- proactive nudges: the agent tapping your shoulder ----
+@app.get("/nudges")
+def nudges_list(unseen: bool = True, _=Depends(need_auth)):
+    try:
+        from app.proactive import list_nudges
+    except ImportError:
+        from proactive import list_nudges
+    return {"nudges": list_nudges(unseen_only=unseen)}
+
+@app.post("/nudges/seen")
+async def nudges_seen(payload: dict = None, _=Depends(need_auth)):
+    try:
+        from app.proactive import mark_seen
+    except ImportError:
+        from proactive import mark_seen
+    r = mark_seen(int((payload or {}).get("id", 0)))
+    await hub.push()
+    return r
+
+# ---- memory 2.0: facts + recall + rolling summary ----
+@app.post("/memory/facts")
+async def memory_fact(payload: dict, _=Depends(need_auth)):
+    fid = mem.note_fact(payload.get("fact", ""), float(payload.get("salience", 1.0)))
+    await hub.push()
+    return {"ok": True, "id": fid}
+
+@app.get("/memory/recall")
+def memory_recall(q: str = "", k: int = 5, _=Depends(need_auth)):
+    return {"facts": mem.recall(q, k), "summary": mem.get_summary()}
+
+# ---- device presence + offline outbox ----
+@app.post("/devices/heartbeat")
+async def device_beat(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.presence import heartbeat
+    except ImportError:
+        from presence import heartbeat
+    return heartbeat(payload.get("device", "unknown"), payload.get("meta", ""))
+
+@app.get("/devices")
+def devices_list(_=Depends(need_auth)):
+    try:
+        from app.presence import list_devices
+    except ImportError:
+        from presence import list_devices
+    return {"devices": list_devices()}
+
+@app.get("/updates/latest")
+def updates_latest():
+    return {"version": OSOKAI_VERSION, "notes": "See GitHub releases for changelog."}
 
 # ---- research + agent builder ----
 @app.post("/research")
@@ -929,6 +1248,12 @@ def notes(_=Depends(need_auth)):
     ga = alerts(unseen_only=True)
     n["alerts"] = ga
     n["unread"] = n.get("unread", 0) + len(ga)
+    try:
+        cap = _fillq().captcha_count()
+    except Exception:
+        cap = 0
+    n["captcha"] = cap
+    n["unread"] = n.get("unread", 0) + cap
     return n
 
 @app.post("/notifications/simulate")

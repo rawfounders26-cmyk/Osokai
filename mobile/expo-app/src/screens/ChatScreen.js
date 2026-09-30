@@ -1,14 +1,21 @@
 // Osok-AI Chat — AI Assistant look, approvals inline.
-import { useState, useRef } from 'react';
+import { useState, useRef, Component } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SvgXml } from 'react-native-svg';
-import { useAudioRecorder, useAudioRecorderState, RecordingPresets, requestRecordingPermissionsAsync } from 'expo-audio';
 import { chat, listPendingApprovals, decideApproval, loopSnooze, voiceTranscribe } from '../services/api';
 import { colors, radius, spacing } from '../services/theme';
+import MicButton from '../components/MicButton';
+
+// Mic must never crash chat (missing native audio on some Go builds)
+class MicGuard extends Component {
+  state = { dead: false };
+  static getDerivedStateFromError() { return { dead: true }; }
+  render() { return this.state.dead ? null : this.props.children; }
+}
 
 const OSOKAI_BLOB = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="p" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a855f7"/><stop offset="1" stop-color="#5b5bd6"/></linearGradient></defs><path d="p" fill="url(#p)"/><circle cx="38" cy="42" r="6" fill="#fff" opacity=".9"/><circle cx="62" cy="42" r="6" fill="#fff" opacity=".9"/><circle cx="39.5" cy="43.5" r="2.8" fill="#2a1b4e"/><circle cx="63.5" cy="43.5" r="2.8" fill="#2a1b4e"/><path d="M 38,62 Q 50,70 62,62" stroke="#fff" stroke-width="3.5" fill="none" stroke-linecap="round"/></svg>`;
 
@@ -18,31 +25,12 @@ export default function ChatScreen() {
   const [msgs, setMsgs] = useState([]);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState([]);
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const recState = useAudioRecorderState(recorder);
-  const recording = recState?.isRecording ?? false;
   const listRef = useRef(null);
+
+  const addVoiceText = (t) => setInput(prev => (prev ? prev + ' ' : '') + t);
 
   const refreshApprovals = async () => {
     try { setPending(await listPendingApprovals()); } catch {}
-  };
-
-  const micToggle = async () => {
-    try {
-      if (recording) {
-        await recorder.stop();
-        const uri = recorder.uri;
-        if (uri) {
-          const t = await voiceTranscribe(uri);
-          if (t) setInput(prev => (prev ? prev + ' ' : '') + t);
-        }
-        return;
-      }
-      const perm = await requestRecordingPermissionsAsync();
-      if (!perm.granted) return;
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-    } catch {}
   };
 
   const send = async () => {
@@ -132,9 +120,7 @@ export default function ChatScreen() {
         <View style={[s.inputBar, { paddingBottom: insets.bottom > 0 ? insets.bottom : 12 }]}>
           <TextInput style={s.input} value={input} onChangeText={setInput} placeholder="Message AI Assistant…"
             placeholderTextColor={colors.sub} multiline maxLength={1000} />
-          <TouchableOpacity style={[s.send, recording && s.recOn]} onPress={micToggle}>
-            <Text style={s.sendI}>{recording ? '■' : '🎙'}</Text>
-          </TouchableOpacity>
+          <MicGuard><MicButton onText={addVoiceText} /></MicGuard>
           <TouchableOpacity style={[s.send, (busy || !input.trim()) && s.sendOff]} onPress={send} disabled={busy || !input.trim()}>
             {busy ? <ActivityIndicator size="small" color="#fff" /> : <Text style={s.sendI}>↑</Text>}
           </TouchableOpacity>

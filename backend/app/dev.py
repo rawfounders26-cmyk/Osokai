@@ -3,9 +3,11 @@ import os
 import subprocess
 
 try:
-    WS = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "workspace"))
-except Exception:
-    WS = "workspace"
+    from app.paths import ws as _pws
+except ImportError:
+    from paths import ws as _pws
+
+WS = _pws()
 
 ALLOW = ("python", "pip", "pytest", "node", "npm", "git", "dir", "ls", "echo", "code")
 BLOCKED = ("rm ", "del ", "format", "shutdown", "reboot", ":(){", "mkfs", "dd ")

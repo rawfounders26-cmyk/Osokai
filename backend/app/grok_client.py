@@ -24,6 +24,10 @@ def chat_with_grok(message: str) -> str:
                   "max_tokens": 600},
         )
         r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+        try:
+            from app.system_tools import sanitize_reply
+        except ImportError:
+            from system_tools import sanitize_reply
+        return sanitize_reply(r.json()["choices"][0]["message"]["content"])
     except Exception as e:
         return f"[osok-ai-error] LLM call failed: {e}"

@@ -4,7 +4,12 @@ import os
 import sqlite3
 import time
 
-DB = os.path.join(os.path.dirname(__file__), "..", "osokai.db")
+try:
+    from app.paths import data as _pdata
+except ImportError:
+    from paths import data as _pdata
+
+DB = _pdata("osokai.db")
 
 def _db():
     db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)

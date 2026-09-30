@@ -10,15 +10,30 @@ except ImportError:
 YOUTUBE_SITES = ("youtube", "yt")
 
 def _yt_search_url(query: str) -> str:
-    return "http://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(query)
+    return "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(query)
 
 def _google_url(query: str, images: bool = False) -> str:
-    u = "http://www.google.com/search?q=" + urllib.parse.quote_plus(query)
+    u = "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
     return u + ("&tbm=isch" if images else "")
+
+_TA_VERBS = [("thira", "open"), ("thirakkavum", "open"), ("திற", "open"),
+              ("podu", "play"), ("podunga", "play"), ("podavum", "play"), ("போடு", "play"),
+              ("thedu", "search"), ("thedavum", "search"), ("தேடு", "search"),
+              ("anuppu", "send"), ("அனுப்பு", "send"), ("paaru", "watch"), ("பாரு", "watch")]
+
+def _tamil_fix(t: str) -> str:
+    """Tanglish/Tamil SOV ('youtube thira') -> English SVO ('open youtube')."""
+    if re.match(r"^(open|play|watch|search|find|send|add|remind|done|track|list|show)", t):
+        return t
+    for ta, en in _TA_VERBS:
+        if ta in t:
+            t = en + " " + t.replace(ta, "").strip()
+            break
+    return re.sub(r"\s+", " ", t).strip()
 
 def parse(message: str):
     """Return (action_dict, reply) or (None, None) if no fast intent."""
-    t = message.strip().lower()
+    t = _tamil_fix(message.strip().lower())
 
     # loops: "remind me to reply to ravi tomorrow 5pm" / "done replying to ravi"
     m = re.match(r"^remind me to\s+(.+)$", t)
@@ -46,7 +61,7 @@ def parse(message: str):
     m = re.match(r"^open\s+(youtube|yt)(?:\s+(?:and\s+)?search\s+(.+))?$", t)
     if m:
         q = (m.group(2) or "").strip()
-        url = _yt_search_url(q) if q else "http://www.youtube.com"
+        url = _yt_search_url(q) if q else "https://www.youtube.com"
         return {"type": "open_url", "url": url}, None
 
     # open google and search <q> and save <n> image(s) on desktop
@@ -71,9 +86,9 @@ def parse(message: str):
     # India everyday: blinkit/swiggy/zomato/bookmyshow/irctc/amazon
     m = re.match(r"^open\s+(blinkit|swiggy|zomato|bookmyshow|irctc|amazon)(\s|$)", t)
     if m:
-        sites = {"blinkit": "http://blinkit.com", "swiggy": "http://www.swiggy.com",
-                 "zomato": "http://www.zomato.com", "bookmyshow": "http://in.bookmyshow.com",
-                 "irctc": "http://www.irctc.co.in", "amazon": "http://www.amazon.in"}
+        sites = {"blinkit": "https://blinkit.com", "swiggy": "https://www.swiggy.com",
+                 "zomato": "https://www.zomato.com", "bookmyshow": "https://in.bookmyshow.com",
+                 "irctc": "https://www.irctc.co.in", "amazon": "https://www.amazon.in"}
         return {"type": "open_url", "url": sites[m.group(1)]}, None
 
     # trackers: subscriptions, dentist waitlist, bill disputes -> watched goal + checklist
@@ -97,10 +112,25 @@ def parse(message: str):
         if any(s in name for s in (".com", ".in", ".org", "www.", "http")) or " " not in name and "." in name:
             return {"type": "open_url", "url": name}, None
         if "youtube" in name:
-            return {"type": "open_url", "url": "http://www.youtube.com"}, None
+            return {"type": "open_url", "url": "https://www.youtube.com"}, None
         if name in ("google", "gmail"):
-            return {"type": "open_url", "url": "http://www.google.com" if name == "google" else "http://mail.google.com"}, None
+            return {"type": "open_url", "url": "https://www.google.com" if name == "google" else "https://mail.google.com"}, None
         return {"type": "open_app", "app": name}, None
+
+    # shopping browse FIRST (generic search below would shadow it): "search mens shoes under 2000"
+    m = re.match(r"^(?:search|find|shop for|show me)\s+(.+?)(?:\s+(?:under|below|within|less than)\s+(?:rs\.?\s?|₹\s?)?([\d,]+))?$", t)
+    if m:
+        item, budget = m.group(1).strip(), (m.group(2) or "").replace(",", "")
+        if "youtube" in item or item in ("yt",):
+            pass  # fall through to youtube handler below
+        elif any(w in item for w in ("shoe", "phone", "laptop", "watch", "shirt", "dress", "kurta", "saree", "tv", "headphone", "earbud", "camera", "tablet", "sandal", "bag", "suitcase", "mixer", "fridge", "ac ")) or budget:
+            url = "https://www.flipkart.com/search?q=" + urllib.parse.quote_plus(item)
+            return {"type": "shop_browse", "item": item, "budget": budget, "url": url}, None
+
+    # generate image/picture of X — AI image generation into workspace/
+    m = re.match(r"^(?:generate|create|make)\s+(?:an?\s+)?(?:image|picture|photo|wallpaper)\s+(?:of\s+)?(.+)$", t)
+    if m:
+        return {"type": "img_gen", "prompt": m.group(1).strip()}, None
 
     # search <q> on google / search <q>
     m = re.match(r"^(?:search|find|google)\s+(.+?)(?:\s+on\s+google)?$", t)
@@ -110,16 +140,6 @@ def parse(message: str):
             images = any(w in q for w in ("image", "images", "photo", "photos", "picture", "wallpaper"))
             q = re.sub(r"\s*(images?|photos?|pictures?|wallpapers?)\s*", " ", q).strip()
             return {"type": "open_url", "url": _google_url(q or m.group(1).strip(), images=images)}, None
-
-    # shopping browse: "search mens shoes under 2000", "find phones below 15000", "shop for shoes"
-    m = re.match(r"^(?:search|find|shop for|show me)\s+(.+?)(?:\s+(?:under|below|within|less than)\s+(?:rs\.?\s?|₹\s?)?([\d,]+))?$", t)
-    if m:
-        item, budget = m.group(1).strip(), (m.group(2) or "").replace(",", "")
-        if "youtube" in item or item in ("yt",):
-            pass  # fall through to youtube handler below
-        elif any(w in item for w in ("shoe", "phone", "laptop", "watch", "shirt", "dress", "kurta", "saree", "tv", "headphone", "earbud", "camera", "tablet", "sandal", "bag", "suitcase", "mixer", "fridge", "ac ")) or budget:
-            url = "http://www.flipkart.com/search?q=" + urllib.parse.quote_plus(item)
-            return {"type": "shop_browse", "item": item, "budget": budget, "url": url}, None
     m = re.match(r"^(?:search|find)\s+(.+?)\s+on\s+(youtube|yt)$", t)
     if m:
         return {"type": "open_url", "url": _yt_search_url(m.group(1).strip())}, None
@@ -177,6 +197,10 @@ def _loop_due(title: str):
 
 def execute(action: dict, device: str = "unknown"):
     """Run it NOW on this PC. Returns reply string."""
+    try:
+        from app.system_tools import sanitize_reply
+    except ImportError:
+        from system_tools import sanitize_reply
     at = action["type"]
     if at == "loop_add":
         try:
@@ -184,8 +208,25 @@ def execute(action: dict, device: str = "unknown"):
         except ImportError:
             from loops import add as _ladd
         title, due = _loop_due(action.get("title", ""))
-        kind = "reply" if any(w in title for w in ("reply", "call back", "message")) else \
-               "call" if "call" in title else "save" if "save" in title else "promise"
+        tl = title.lower()
+        if any(w in tl for w in ("buy", "order", "pay", "shop")):
+            kind = "shopping"
+        elif any(w in tl for w in ("trip", "travel", "flight", "hotel")):
+            kind = "trip"
+        elif "email" in tl or "mail" in tl:
+            kind = "email"
+        elif any(w in tl for w in ("meeting", "appointment", "dentist", "calendar")):
+            kind = "cal"
+        elif any(w in tl for w in ("outfit", "wear", "dress")):
+            kind = "wardrobe"
+        elif any(w in tl for w in ("reply", "call back", "message")):
+            kind = "reply"
+        elif "call" in tl:
+            kind = "call"
+        elif "save" in tl:
+            kind = "save"
+        else:
+            kind = "promise"
         r = _ladd(kind, title, device, due)
         when = f" (due {__import__('datetime').datetime.fromtimestamp(due).strftime('%a %I:%M%p')})" if due else ""
         return f"Loop #{r['id']} open: {title}{when}."
@@ -253,6 +294,15 @@ def execute(action: dict, device: str = "unknown"):
             return f"Done: {fp} (see Files tab)"
         except Exception as e:
             return f"Image failed: {e}"
+    if at == "img_gen":
+        try:
+            from app import img as _img2
+        except ImportError:
+            import img as _img2
+        r = _img2.img_generate(action.get("prompt", ""))
+        if isinstance(r, dict) and r.get("ok"):
+            return f"Generated: {r['saved']} (see Files tab)"
+        return f"Generation failed: {(r.get('error') if isinstance(r, dict) else r)}"
     if at == "open_url":
         r = open_url(action["url"])
         return f"Opened {r.get('opened', action['url'])}." if r["ok"] else f"Could not open: {r.get('error')}"

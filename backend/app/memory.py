@@ -3,8 +3,13 @@ import calendar
 import datetime
 import os, sqlite3, time
 
-DB = os.path.join(os.path.dirname(__file__), "..", "osokai.db")
-WS = os.path.join(os.path.dirname(__file__), "..", "..", "workspace")
+try:
+    from app.paths import data as _pdata, ws as _pws
+except ImportError:
+    from paths import data as _pdata, ws as _pws
+
+DB = _pdata("osokai.db")
+WS = _pws()
 
 class Memory:
     def __init__(self):
@@ -14,9 +19,64 @@ class Memory:
         self.db.execute("""CREATE TABLE IF NOT EXISTS approvals(
             id INTEGER PRIMARY KEY, message TEXT, device TEXT, status TEXT,
             kind TEXT, item TEXT, ts REAL, reply TEXT)""")
+        # Memory 2.0: episodic facts with salience + rolling summary
+        self.db.execute("""CREATE TABLE IF NOT EXISTS facts(
+            id INTEGER PRIMARY KEY, fact TEXT, salience REAL DEFAULT 1.0, ts REAL)""")
+        self.db.execute("CREATE TABLE IF NOT EXISTS summary(id INTEGER PRIMARY KEY CHECK(id=1), text TEXT, updated REAL)")
 
     def add(self, role, text):
         self.db.execute("INSERT INTO turns VALUES(?,?,?)", (role, text, time.time()))
+        self.db.commit()
+        try:
+            n = self.db.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
+            if n % 50 == 0:
+                self._refresh_summary()
+        except Exception:
+            pass
+
+    # ---- episodic memory: durable facts, salience-ranked recall ----
+    def note_fact(self, fact: str, salience: float = 1.0):
+        cur = self.db.execute("INSERT INTO facts(fact, salience, ts) VALUES(?,?,?)",
+                              (fact[:1000], max(0.1, min(5.0, salience)), time.time()))
+        self.db.commit()
+        return cur.lastrowid
+
+    def recall(self, query: str = "", k: int = 5):
+        terms = [t for t in query.lower().split() if len(t) > 2]
+        rows = self.db.execute("SELECT id, fact, salience, ts FROM facts ORDER BY salience DESC, ts DESC LIMIT 50").fetchall()
+        scored = []
+        for r in rows:
+            fl = r[1].lower()
+            s = r[2] + sum(1.0 for t in terms if t in fl)
+            if not terms or any(t in fl for t in terms):
+                scored.append((s, {"id": r[0], "fact": r[1], "salience": r[2], "ts": r[3]}))
+        scored.sort(key=lambda s: -s[0])
+        return [s[1] for s in scored[:k]]
+
+    def get_summary(self) -> str:
+        try:
+            r = self.db.execute("SELECT text FROM summary WHERE id=1").fetchone()
+            return r[0] if r else ""
+        except Exception:
+            return ""
+
+    def _refresh_summary(self):
+        rows = self.db.execute("SELECT role, text FROM turns ORDER BY ts DESC LIMIT 30").fetchall()
+        convo = "\n".join(f"{r[0]}: {r[1][:300]}" for r in reversed(rows))
+        text = ""
+        try:
+            try:
+                from app.grok_client import chat_with_grok
+            except ImportError:
+                from grok_client import chat_with_grok
+            text = chat_with_grok("Summarize this user-agent conversation in 5 bullet facts "
+                                  "(preferences, names, ongoing goals). No fluff:\n" + convo)[:2000]
+        except Exception:
+            pass
+        if not text:
+            users = [r[1][:160] for r in rows if r[0] == "user"][:5]
+            text = "Recent threads: " + " | ".join(users)
+        self.db.execute("INSERT OR REPLACE INTO summary(id, text, updated) VALUES(1,?,?)", (text, time.time()))
         self.db.commit()
 
     # ---- durable approvals: survive backend restarts (unlike in-memory dicts) ----
@@ -84,6 +144,16 @@ class Memory:
         rows = self.db.execute(
             "SELECT role, text, ts FROM turns WHERE ts>=? AND ts<? ORDER BY ts DESC", (lo, hi)).fetchall()
         goals = [{"text": r[1][:200], "ts": r[2]} for r in rows if r[0] == "user"]
+        # past goal-trees belong to their month folder too
+        try:
+            grows = self.db.execute(
+                "SELECT id, title, created FROM goal_trees WHERE created>=? AND created<? ORDER BY created DESC",
+                (lo, hi)).fetchall()
+        except Exception:
+            grows = []
+        for gid, title, ts in grows:
+            goals.append({"text": f"🎯 Goal: {title}", "ts": ts, "goal_id": gid})
+        goals.sort(key=lambda g: g["ts"], reverse=True)
         label = datetime.datetime(int(y), int(m), 1).strftime("%b-%y")
         return {"month": ym, "label": label, "tasks": len(goals),
                 "usage": f"{len(goals)} goals · {len(rows)} exchanges",

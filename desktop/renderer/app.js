@@ -206,8 +206,13 @@ document.getElementById('lockbtn').onclick = async () => {
   } catch (e) { out.textContent = e.message; }
   loadVault();
 };
-document.getElementById('set-save').onclick = async () => {
-  const base = document.getElementById('set-base').value.trim();
+document.getElementById('pairbtn').onclick = async () => {
+  try {
+    const j = await pfetch('/pairing/code', { method: 'POST', body: JSON.stringify({}) });
+    document.getElementById('paircode').textContent = (j.code || '').split('').join(' ') + (j.url ? ` (${j.url})` : '');
+  } catch (e) { out.textContent = e.message; }
+};
+document.getElementById('set-save').onclick = async () => {  const base = document.getElementById('set-base').value.trim();
   const token = document.getElementById('set-token').value.trim();
   cfg.set(base, token);
   wsConnect(); // reconnect live sync on new URL/token

@@ -5,9 +5,11 @@ import re
 import time
 
 try:
-    WS = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "workspace"))
-except Exception:
-    WS = "workspace"
+    from app.paths import ws as _pws
+except ImportError:
+    from paths import ws as _pws
+
+WS = _pws()
 
 try:
     from app.agent import _web_search

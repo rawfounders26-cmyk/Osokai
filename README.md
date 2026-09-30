@@ -26,3 +26,13 @@ npm run dist-mac  # .dmg (run on Mac)
 ## Mobile / Extension
 - mobile: `flutter run --dart-define=API_BASE_URL=http://<PC-LAN-IP>:8765`
 - extension: load unpacked `extension/`, backend must be running.
+
+## v0.2 scale-up
+- Proactive engine (nudges, 8am briefing) · orchestrator auto-steps (`POST /goaltrees/{id}/auto-step`)
+- Memory 2.0 facts/recall · hybrid RAG with citations (`POST /rag/answer`)
+- Rate limits + request ids · device presence + offline outbox · Docker + CI
+- See `docs/ARCHITECTURE.md` and `docs/SCALING.md`.
+
+```
+docker compose up --build  # backend on :8765
+```

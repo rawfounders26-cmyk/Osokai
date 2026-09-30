@@ -1,0 +1,14 @@
+services:
+  osokai:
+    build: .
+    ports:
+      - "8765:8765"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - osokai-data:/srv/backend/data
+      - ./backend/workspace:/srv/backend/workspace
+    restart: unless-stopped
+
+volumes:
+  osokai-data:

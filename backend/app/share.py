@@ -12,9 +12,11 @@ import zipfile
 from cryptography.fernet import Fernet
 
 try:
-    WS = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "workspace"))
-except Exception:
-    WS = "workspace"
+    from app.paths import ws as _pws
+except ImportError:
+    from paths import ws as _pws
+
+WS = _pws()
 
 SHARED = os.path.join(WS, "shared")
 INBOX = os.path.join(WS, "inbox")

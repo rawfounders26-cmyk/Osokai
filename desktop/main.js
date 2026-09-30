@@ -66,6 +66,7 @@ function create() {
   ipcMain.on('osokai-minimize', () => { if (win) win.minimize(); });
 }
 app.whenReady().then(() => {
+  startBackend();
   create();
   // Primary: Alt+Space (Win) / Option+Space (Mac). Fallback Ctrl+Alt+P.
   const ok = globalShortcut.register('Alt+Space', toggle);
@@ -75,4 +76,48 @@ app.whenReady().then(() => {
     tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Show Osok-AI (Alt+Space)', click: toggle }, { label: 'Quit', click: () => app.quit() }]));
   } catch (e) { console.log('tray icon skipped (add icon.png later):', e.message); }
 });
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => { globalShortcut.unregisterAll(); stopBackend(); });
+
+// ---- bundled backend sidecar: packaged exe if present, else system python ----
+let backendProc = null;
+function backendDir() {
+  // prod: <resources>/backend | dev: ../backend/dist/osokai-server (or ../backend)
+  const cands = [
+    path.join(process.resourcesPath || '', 'backend'),
+    path.join(__dirname, '..', 'backend', 'dist', 'osokai-server'),
+    path.join(__dirname, '..', 'backend'),
+  ];
+  const fs = require('fs');
+  for (const c of cands) { try { if (c && fs.existsSync(c)) return c; } catch (e) {} }
+  return null;
+}
+function startBackend() {
+  const net = require('net');
+  const probe = net.connect({ host: '127.0.0.1', port: 8765 });
+  probe.on('connect', () => { probe.end(); console.log('backend already running, sidecar skipped'); });
+  probe.on('error', () => { spawnBackend(); });
+  probe.setTimeout(1500);
+  probe.on('timeout', () => { try { probe.destroy(); } catch (e) {} spawnBackend(); });
+}
+function spawnBackend() {
+  try {
+    const { spawn } = require('child_process');
+    const fs = require('fs');
+    const dir = backendDir();
+    if (!dir) { console.log('backend dir not found, expecting external server'); return; }
+    const exe = path.join(dir, process.platform === 'win32' ? 'osokai-server.exe' : 'osokai-server');
+    if (fs.existsSync(exe)) {
+      backendProc = spawn(exe, [], { cwd: dir, windowsHide: true });
+      console.log('backend sidecar: bundled exe');
+    } else {
+      backendProc = spawn('python', ['-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8765'],
+        { cwd: path.join(__dirname, '..', 'backend'), windowsHide: true });
+      console.log('backend sidecar: system python fallback');
+    }
+    backendProc.on('error', (e) => console.log('backend spawn failed (use external server):', e.message));
+  } catch (e) { console.log('backend start skipped:', e.message); }
+}
+function stopBackend() {
+  try { if (backendProc) backendProc.kill(); } catch (e) {}
+  backendProc = null;
+}

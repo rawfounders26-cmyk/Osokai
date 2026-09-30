@@ -3,9 +3,11 @@ Works on workspace/ files (same store mobile Files shows)."""
 import os
 
 try:
-    WS = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "workspace"))
-except Exception:
-    WS = "workspace"
+    from app.paths import ws as _pws
+except ImportError:
+    from paths import ws as _pws
+
+WS = _pws()
 
 def _open(name: str):
     from PIL import Image
@@ -80,3 +82,28 @@ def img_caption(name: str, top: str = "", bottom: str = "", out: str = ""):
         line(bottom.upper(), img.height - (bb[3] - bb[1]) - 14)
     base = os.path.splitext(os.path.basename(name))[0]
     return _save(img, out or f"{base}-meme.jpg")
+
+
+def img_generate(prompt: str, name: str = "", size: str = "1024x1024") -> str:
+    """AI image generation via free Pollinations (Flux-backed, no key).
+    Honest: cloud service, not local. Saves into workspace/."""
+    import re
+    import httpx
+    from urllib.parse import quote
+    w, h = 1024, 1024
+    m = re.match(r"(\d+)x(\d+)", size or "")
+    if m:
+        w, h = max(256, min(int(m.group(1)), 2048)), max(256, min(int(m.group(2)), 2048))
+    url = f"https://image.pollinations.ai/prompt/{quote(prompt[:500])}?width={w}&height={h}&nologo=true&model=flux"
+    try:
+        r = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=120, follow_redirects=True)
+        if r.status_code != 200 or len(r.content) < 20000 or "image" not in r.headers.get("content-type", ""):
+            return {"ok": False, "error": f"gen failed: HTTP {r.status_code}"}
+        slug = re.sub(r"[^\w\- ]+", "", prompt).strip().replace(" ", "-")[:40] or "gen"
+        fp = os.path.join(WS, (name or f"{slug}.jpg"))
+        if not fp.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+            fp += ".jpg"
+        open(fp, "wb").write(r.content)
+        return {"ok": True, "saved": fp}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}

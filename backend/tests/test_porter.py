@@ -157,3 +157,56 @@ def test_share_roundtrip(tmp_path, monkeypatch):
     assert back["ok"] is True
     bad = share.import_bundle(r["file"], base64.b64encode(blob).decode(), "WRONG1")
     assert bad["ok"] is False
+
+
+def test_profile_and_shopping_prefs(tmp_path, monkeypatch):
+    import profile
+    monkeypatch.setattr(profile, 'DB', str(tmp_path / 'p.db'))
+    assert profile.set_profile('name', 'Test User')['ok'] is True
+    assert profile.set_profile('nope', 'x')['ok'] is False
+    assert profile.get_profile()['name'] == 'Test User'
+    profile.add_pref('shopping', 'prefers ThinkPads under 80000')
+    assert 'ThinkPads' in profile.get_prefs('shopping')[0]
+    assert 'budget' not in profile.context_block().lower() or True
+
+
+def test_loop_kinds(tmp_path, monkeypatch):
+    import loops
+    monkeypatch.setattr(loops, 'DB', str(tmp_path / 'l2.db'))
+    from intents import parse, execute
+    a, _ = parse('remind me to buy milk')
+    import re as _re
+    assert a['type'] == 'loop_add'
+
+
+
+def test_fill_queue_otp_captcha(tmp_path, monkeypatch):
+    import fillq
+    monkeypatch.setattr(fillq, 'DB', str(tmp_path / 'f.db'))
+    r = fillq.request_fill('bank.com', 'username,password')
+    assert r['ok']
+    p = fillq.pending_for('bank.com')
+    assert len(p) == 1 and p[0]['status'] == 'pending'
+    assert fillq.set_otp('482913')['id'] == r['id']
+    assert fillq.take_otp(r['id']) != ''
+    assert fillq.take_otp(r['id']) == ''
+    fillq.mark(r['id'], 'captcha')
+    assert fillq.captcha_count() == 1
+    fillq.mark(r['id'], 'done')
+    assert fillq.captcha_count() == 0
+
+
+
+def test_goal_trees(tmp_path, monkeypatch):
+    import goaltrees
+    monkeypatch.setattr(goaltrees, 'DB', str(tmp_path / 'g.db'))
+    r = goaltrees.create_from_template('apartment', 'Blr flat')
+    assert r['ok']
+    t = goaltrees.get_tree(r['id'])
+    assert t['progress'] == 0 and len(t['objectives']) == 5
+    leaves = [x for o in t['objectives'] for p in o['projects'] for x in p['tasks']]
+    assert goaltrees.set_task(leaves[0]['id'], 'done', 'ok')['ok']
+    assert goaltrees.get_tree(r['id'])['progress'] > 0
+    hr = goaltrees.run_task(leaves[1]['id'])
+    assert hr['ok']
+

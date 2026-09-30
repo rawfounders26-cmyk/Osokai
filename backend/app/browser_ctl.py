@@ -19,8 +19,11 @@ def screenshot() -> str:
     """Returns PNG path (workspace) of the live browser.
     Needs one-time Chrome approval: tick 'Allow remote debugging' on the chrome://inspect popup."""
     import time
-    ws = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "workspace"))
-    os.makedirs(ws, exist_ok=True)
+    try:
+        from app.paths import ws as _pws
+    except ImportError:
+        from paths import ws as _pws
+    ws = _pws()
     fp = os.path.join(ws, f"console-{int(time.time())}.png")
     out = _pipe(f"ensure_real_tab()\nshot('{fp}')\nprint('saved')")
     if os.path.isfile(fp):

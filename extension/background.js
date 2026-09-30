@@ -4,6 +4,20 @@ async function cfg() {
   return { base: d.OSOKAI_base || 'http://127.0.0.1:8765', token: d.OSOKAI_token || '' };
 }
 chrome.runtime.onMessage.addListener((msg, s, send) => {
+  if (msg.type === 'OSOKAI_CAPTCHA') {
+    // pop-out notification: user solves it, flow resumes from the popup
+    try {
+      chrome.notifications.create(`osokai-captcha-${msg.id || Date.now()}`, {
+        type: 'basic',
+        iconUrl: 'icons/osokai.svg',
+        title: 'Osok-AI needs you',
+        message: `Complete the captcha on ${msg.site || 'this page'} — then press Solved in the popup and I'll continue.`,
+        priority: 2,
+      });
+    } catch (e) {}
+    pollBadge();
+    return false;
+  }
   if (msg.type === 'OSOKAI_SEND_TAB') {
     (async () => {
       const c = await cfg();

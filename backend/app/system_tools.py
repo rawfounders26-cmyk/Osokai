@@ -22,25 +22,50 @@ def clean_url(url: str) -> str:
         pass
     u = u.strip("\"'“”‘’").strip()
     u = u.replace("%22", "").replace("%27", "")
-    had_scheme = bool(re.match(r"^https?://", u))
     u = re.sub(r"^(https?)//", r"\1://", u)
-    if not had_scheme:
-        # scheme was missing or malformed -> plain http://
-        u = re.sub(r"^https://", "http://", u)
     u = re.sub(r"^https?://(https?://)", r"\1", u)
     if not u.startswith(("http://", "https://")):
-        u = "http://" + u
+        u = "https://" + u
     return u
+
+def sanitize_reply(text: str) -> str:
+    """Fix malformed URLs the model writes in reply text (https//, %22, stray quotes)."""
+    import re
+    import urllib.parse
+    if not text:
+        return text
+    def _fix(m):
+        u = m.group(0)
+        try:
+            u = urllib.parse.unquote(u)
+        except Exception:
+            pass
+        u = u.strip("\"'“”‘’").strip()
+        u = u.replace("%22", "").replace("%27", "")
+        had = bool(re.match(r"^https?://", u))
+        u = re.sub(r"^(https?)//", r"\1://", u)
+        if not had:
+            u = re.sub(r"^https://", "http://", u)
+        return u
+    return re.sub(r'https?//[^\s)>\]`\'"“”‘’]+', _fix, text)
+
+def _chrome_args(url: str):
+    """Arg list for launching Chrome. No manual quotes — list-form Popen passes them literally."""
+    import sys as _sys
+    if _sys.platform.startswith("win"):
+        return ["cmd", "/c", "start", "", "chrome", "--new-tab", url]
+    if _sys.platform == "darwin":
+        return ["open", "-a", "Google Chrome", url]
+    return ["google-chrome", url]
 
 def _chrome_open(url: str):
     """Force Chrome via App Paths so the tab lands where Osok-AI lives. New tab if Chrome runs."""
     import subprocess
-    if sys.platform.startswith("win"):
-        subprocess.Popen(["cmd", "/c", "start", "", "chrome", "--new-tab", f'"{url}"'])
-    elif sys.platform == "darwin":
-        subprocess.Popen(["open", "-a", "Google Chrome", url])
-    else:
-        subprocess.Popen(["google-chrome", url])
+    try:
+        subprocess.Popen(_chrome_args(url))
+    except Exception:
+        import webbrowser
+        webbrowser.open(url)
 
 def open_url(url: str):
     url = clean_url(url)

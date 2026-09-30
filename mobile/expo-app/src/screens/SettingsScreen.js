@@ -4,7 +4,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Refres
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import { loadConfig, saveConfig } from '../services/config';
-import { authCheck, getConnectors, startSync, vaultStatus, vaultLock, vaultUnlock, vaultAudit, vaultList, vaultPolicy } from '../services/api';
+import { authCheck, getConnectors, startSync, vaultStatus, vaultLock, vaultUnlock, vaultAudit, vaultList, vaultPolicy, pairRedeem } from '../services/api';
 import { colors, radius, spacing } from '../services/theme';
 
 export default function SettingsScreen() {
@@ -16,6 +16,7 @@ export default function SettingsScreen() {
   const [conns, setConns] = useState([]);
   const [ref, setRef] = useState(false);
   const [lock, setLock] = useState(null);
+  const [pair, setPair] = useState('');
   const [secrets, setSecrets] = useState([]);
   const [audit, setAudit] = useState([]);
 
@@ -47,6 +48,20 @@ export default function SettingsScreen() {
     } catch (e) { setLive(`${e.message}`); }
   };
 
+  const doPair = async () => {
+    if (pair.trim().length < 6) { setLive('enter the 6-char code'); return; }
+    try {
+      const j = await pairRedeem(pair.trim());
+      await saveConfig({ serverUrl: j.url, authToken: j.token, device: device || 'mobile-app' });
+      setBase(j.url); setToken(j.token);
+      await authCheck();
+      setLive('paired + synced ✓');
+      setPair('');
+      load();
+      startSync();
+    } catch (e) { setLive(`${e.message}`); }
+  };
+
   const connected = conns.filter(c => c.connected).length;
   return (
     <View style={[s.wrap, { paddingTop: insets.top }]}>
@@ -57,10 +72,22 @@ export default function SettingsScreen() {
         <TextInput style={s.input} value={device} onChangeText={setDevice} placeholder="Device ID (mobile-app)" placeholderTextColor={colors.sub} autoCapitalize="none" />
         <TouchableOpacity style={s.btn} onPress={connectAll}><Text style={s.btnT}>Save & reconnect</Text></TouchableOpacity>
         {live ? <Text style={[s.live, { color: live.includes('✓') ? colors.success : colors.error }]}>{live}</Text> : null}
+        <Text style={s.sub}>Or pair with a code from desktop ⚙</Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TextInput style={[s.input, { flex: 1 }]} value={pair} onChangeText={setPair} placeholder="6-char code" placeholderTextColor={colors.sub} autoCapitalize="characters" maxLength={6} />
+          <TouchableOpacity style={[s.btn, { paddingHorizontal: 18, justifyContent: 'center' }]} onPress={doPair}><Text style={s.btnT}>Pair</Text></TouchableOpacity>
+        </View>
         <TouchableOpacity style={s.connCard} onPress={() => router.push('/connectors')}>
           <View>
             <Text style={s.connT}>Connectors</Text>
             <Text style={s.connS}>{conns.length ? `${connected}/${conns.length} connected` : 'WhatsApp · Gmail · Outlook · Discord · Slack'}</Text>
+          </View>
+          <Text style={s.connGo}>›</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={s.connCard} onPress={() => router.push('/goals')}>
+          <View>
+            <Text style={s.connT}>Watched goals</Text>
+            <Text style={s.connS}>price / page / text alerts</Text>
           </View>
           <Text style={s.connGo}>›</Text>
         </TouchableOpacity>

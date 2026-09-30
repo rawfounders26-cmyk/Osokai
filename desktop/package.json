@@ -1,11 +1,24 @@
 {
   "name": "osok-ai-desktop",
   "version": "0.1.0",
+  "description": "Osok-AI Command Port",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dist-win": "electron-builder --win",
     "dist-mac": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "ai.osok.commandport",
+    "productName": "Osok-AI",
+    "files": ["main.js", "preload.js", "renderer/**/*", "package.json"],
+    "extraResources": [
+      { "from": "../backend/dist/osokai-server", "to": "backend", "filter": ["**/*"] },
+      { "from": "../backend/.env.example", "to": "backend/.env.example" }
+    ],
+    "win": { "target": ["nsis"], "artifactName": "Osok-AI-Setup-${version}.${ext}", "signAndEditExecutable": false },
+    "mac": { "target": ["dmg"], "artifactName": "Osok-AI-${version}.${ext}", "category": "public.app-category.productivity" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true }
   },
   "devDependencies": {
     "electron": "^33.4.11",

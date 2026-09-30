@@ -45,6 +45,44 @@ async function loadApprovals() {
     });
   } catch (e) { head.textContent = e.message; }
 }
+async function loadFills() {
+  const box = document.getElementById('fills');
+  if (!box) return;
+  try {
+    const { domain } = await activeDomain();
+    const j = await authed('/fill/pending' + (domain ? `?domain=${encodeURIComponent(domain)}` : ''));
+    box.innerHTML = '';
+    (j.pending || []).forEach((f) => {
+      const el = document.createElement('div'); el.className = 'aitem';
+      el.innerHTML = `<div class="m"><b>${f.site || 'this page'}</b> <span style="color:#8a8a96">[${f.status}] ${f.fields || ''}</span></div>`;
+      const row = document.createElement('div'); row.className = 'row';
+      const go = document.createElement('button'); go.className = 'allow'; go.textContent = 'Fill now';
+      go.onclick = async () => {
+        document.getElementById('o').textContent = await fillFields(['login_user', 'login_pass'], { login_user: 'username', login_pass: 'password' });
+        try {
+          const otp = await authed(`/fill/${f.id}/otp`, { method: 'POST' });
+          if (otp.otp) {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            await chrome.tabs.sendMessage(tab.id, { type: 'OSOKAI_FILL', fields: { totp: otp.otp } });
+          }
+        } catch (e) {}
+        await authed(`/fill/${f.id}/done`, { method: 'POST' });
+        loadFills();
+      };
+      const solved = document.createElement('button'); solved.textContent = 'Solved — continue';
+      solved.onclick = async () => {
+        await authed(`/fill/${f.id}/solved`, { method: 'POST' });
+        document.getElementById('o').textContent = 'resuming…';
+        loadFills();
+      };
+      const drop = document.createElement('button'); drop.className = 'deny'; drop.textContent = '✕';
+      drop.onclick = async () => { await authed(`/fill/${f.id}/done`, { method: 'POST' }); loadFills(); };
+      row.appendChild(go); row.appendChild(solved); row.appendChild(drop);
+      el.appendChild(row);
+      box.appendChild(el);
+    });
+  } catch (e) {}
+}
 (async () => {
   const c = await cfg();
   document.getElementById('base').value = c.base;
@@ -52,6 +90,7 @@ async function loadApprovals() {
   document.getElementById('dev').value = c.device;
   loadApprovals();
   loadVaultBar();
+  loadFills();
 })();
 document.getElementById('save').onclick = async () => {
   const base = document.getElementById('base').value.trim() || 'http://127.0.0.1:8765';
@@ -63,6 +102,7 @@ document.getElementById('save').onclick = async () => {
     document.getElementById('o').textContent = 'live + synced ✓';
   } catch (e) { document.getElementById('o').textContent = e.message; }
   loadApprovals();
+  loadFills();
 };
 async function activeDomain() {
   try {

@@ -1,5 +1,48 @@
 // Osok-AI backend client — mirrors osokai mobile's services/api pattern.
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadConfig } from './config';
+
+const QUEUE_KEY = 'osokai_offline_queue';
+
+function isNetErr(e) {
+  const m = `${e && e.message || e}`;
+  return /network request failed|failed to fetch|network error|aborted|timed out/i.test(m);
+}
+
+export async function queueLength() {
+  try {
+    const q = JSON.parse((await AsyncStorage.getItem(QUEUE_KEY)) || '[]');
+    return q.length;
+  } catch { return 0; }
+}
+
+async function enqueue(path, body) {
+  try {
+    const q = JSON.parse((await AsyncStorage.getItem(QUEUE_KEY)) || '[]');
+    q.push({ path, body, ts: Date.now() });
+    await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(q.slice(-50)));
+  } catch {}
+}
+
+export async function flushQueue() {
+  let q = [];
+  try { q = JSON.parse((await AsyncStorage.getItem(QUEUE_KEY)) || '[]'); } catch {}
+  if (!q.length) return 0;
+  const [base, hdrs] = await Promise.all([baseUrl(), headers()]);
+  const left = [];
+  let sent = 0;
+  for (const item of q) {
+    try {
+      await fetch(`${base}${item.path}`, { method: 'POST', headers: hdrs, body: JSON.stringify(item.body) });
+      sent++; // any HTTP answer counts as delivered (even 4xx: server saw it)
+    } catch (e) {
+      if (isNetErr(e)) { left.push(item); break; } // still offline: keep rest
+      sent++;
+    }
+  }
+  await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(left));
+  return sent;
+}
 
 async function headers() {
   const cfg = await loadConfig();
@@ -35,14 +78,33 @@ export async function authCheck() {
   return res.json();
 }
 
-export async function chat(message) {
-  const [base, hdrs, cfg] = await Promise.all([baseUrl(), headers(), loadConfig()]);
-  const res = await fetch(`${base}/chat`, {
-    method: 'POST', headers: hdrs,
-    body: JSON.stringify({ message, device: cfg.device || 'mobile-app' }),
+export async function pairRedeem(code) {
+  const cfg = await loadConfig();
+  const base = (cfg.serverUrl || process.env.EXPO_PUBLIC_API_BASE_URL || '').trim();
+  if (!base) throw new Error('enter Backend URL first (pairing needs a server to ask)');
+  const res = await fetch(`${base}/pairing/redeem`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
   });
   if (!res.ok) await throwDetail(res, `HTTP ${res.status}`);
   return res.json();
+}
+
+export async function chat(message) {
+  const [base, hdrs, cfg] = await Promise.all([baseUrl(), headers(), loadConfig()]);
+  const body = { message, device: cfg.device || 'mobile-app' };
+  try {
+    const res = await fetch(`${base}/chat`, { method: 'POST', headers: hdrs, body: JSON.stringify(body) });
+    if (!res.ok) await throwDetail(res, `HTTP ${res.status}`);
+    flushQueue().catch(() => {});
+    return res.json();
+  } catch (e) {
+    if (isNetErr(e)) {
+      await enqueue('/chat', body);
+      return { reply: '📴 offline — queued, will send when back online.', approval_required: false, queued: true };
+    }
+    throw e;
+  }
 }
 
 export async function getTasks() {
@@ -255,6 +317,29 @@ export async function loopSnooze(approvalId, hours = 3) {
   return res.json();
 }
 
+export async function notifications() {
+  const [base, hdrs] = await Promise.all([baseUrl(), headers()]);
+  const res = await fetch(`${base}/notifications`, { headers: hdrs });
+  if (!res.ok) await throwDetail(res, `HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function pendingApprovals() {
+  const [base, hdrs] = await Promise.all([baseUrl(), headers()]);
+  const res = await fetch(`${base}/approvals`, { headers: hdrs });
+  if (!res.ok) await throwDetail(res, `HTTP ${res.status}`);
+  const j = await res.json();
+  return j.pending || [];
+}
+
+export async function loopsDue() {
+  const [base, hdrs] = await Promise.all([baseUrl(), headers()]);
+  const res = await fetch(`${base}/loops/due`, { headers: hdrs });
+  if (!res.ok) await throwDetail(res, `HTTP ${res.status}`);
+  const j = await res.json();
+  return j.due || [];
+}
+
 async function vault(path, opts = {}) {
   const [base, hdrs] = await Promise.all([baseUrl(), headers()]);
   const res = await fetch(`${base}${path}`, { headers: hdrs, ...opts });
@@ -288,7 +373,7 @@ export async function startSync() {
   const url = await buildSyncUrl();
   const ws = new WebSocket(url);
   syncSock = ws;
-  ws.onopen = () => { syncDelay = 5000; };
+  ws.onopen = () => { syncDelay = 5000; flushQueue().catch(() => {}); };
   ws.onmessage = (e) => {
     try {
       const d = JSON.parse(e.data);
