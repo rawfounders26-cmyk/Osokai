@@ -406,6 +406,13 @@ export const usageOptimize = () => get('/usage/optimize');
 export const shareLinkCreate = (kind, ref, ttl_hours = 72) => post('/share/links', { kind, ref, ttl_hours });
 export const digestTopics = () => get('/digests/topics').then(j => j.topics || []);
 export const digestAdd = (topic) => post('/digests/topics', { topic });
+
+// v0.6 surfaces
+export const sandboxRun = (skill, action, args = {}) => post('/sandbox/run', { skill, action, args });
+export const handoffCreate = (gid, from_device, to_device) => post('/handoff/create', { gid, from_device, to_device });
+export const handoffPending = (device) => get(`/handoff/pending?device=${encodeURIComponent(device)}`).then(j => j.pending || []);
+export const handoffAccept = (hid, device) => post(`/handoff/${hid}/accept`, { device });
+export const slmFetch = (url) => post('/slm/fetch', { url });
 // live sync: one socket per app session, backoff reconnect, heartbeat-safe
 let syncSock = null;
 let syncDelay = 5000;

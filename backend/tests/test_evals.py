@@ -455,3 +455,64 @@ def test_digest_topics_and_schedule_kind(tmp_path, monkeypatch):
         pass
     r = schedules.execute({"kind": "research_digest", "args": {"topic": "UPI trends"}})
     assert r["ok"] and "mock" in r["note"]
+
+# ---- v0.6 evals: sandbox runtime, handoff, slm fetch ----
+
+def test_runtime_jail_and_gates(tmp_path, monkeypatch):
+    import runtime
+    import sandbox
+    monkeypatch.setattr(runtime, "DB", str(tmp_path / "rt.db"))
+    monkeypatch.setattr(sandbox, "DB", str(tmp_path / "rt2.db"))
+    monkeypatch.setattr(runtime, "WS", str(tmp_path))
+    r = runtime.run("demo", "nope", {})
+    assert r["ok"] is False and "allow-listed" in r["error"]
+    r = runtime.run("demo", "read_file", {"path": "../../evil.txt"})
+    assert r["ok"] is False  # denied: no grant yet
+    sandbox.grant("demo", ["files.read", "loops.write"])
+    try:
+        import app.sandbox as _asb
+        monkeypatch.setattr(_asb, "DB", str(tmp_path / "rt2.db"))
+        _asb.grant("demo", ["files.read", "loops.write"])
+    except ImportError:
+        pass
+    r = runtime.run("demo", "read_file", {"path": "../../evil.txt"})
+    assert r["ok"] is False and "jail" in r["error"]  # grant held, jail still bites
+    r = runtime.run("demo", "web_fetch", {"url": "https://example.com"})
+    assert r["ok"] is False  # net off: no grant
+    r = runtime.run("demo", "append_note", {"text": "runtime probe"})
+    assert r["ok"] is True
+    runtime.kill("demo")
+    assert runtime.run("demo", "append_note", {"text": "x"})["ok"] is False
+    runtime.unkill("demo")
+    assert runtime.run("demo", "append_note", {"text": "x"})["ok"] is True
+    aud = runtime.audit("demo")
+    assert len(aud) >= 4 and any(not a["allowed"] for a in aud)
+
+
+def test_handoff_single_accept(tmp_path, monkeypatch):
+    import handoff
+    import goaltrees
+    monkeypatch.setattr(handoff, "DB", str(tmp_path / "h.db"))
+    monkeypatch.setattr(goaltrees, "DB", str(tmp_path / "hg.db"))
+    try:
+        import app.goaltrees as _ag
+        monkeypatch.setattr(_ag, "DB", str(tmp_path / "hg.db"))
+    except ImportError:
+        pass
+    gid = goaltrees.create_from_template("trip", "Probe trip")["id"]
+    h = handoff.create(gid, "desktop", "phone")
+    assert h["ok"] and h["progress"] == 0
+    assert handoff.create(999999, "desktop", "phone")["ok"] is False
+    assert len(handoff.pending("phone")) == 1
+    a = handoff.accept(h["id"], "laptop")
+    assert a["ok"] is False  # wrong device
+    a = handoff.accept(h["id"], "phone")
+    assert a["ok"] and "resume" in a
+    assert handoff.accept(h["id"], "phone")["ok"] is False  # single-accept
+    assert handoff.pending("phone") == []
+
+
+def test_slm_fetch_rejects_garbage():
+    import slm
+    assert slm.fetch_weights("not-a-url")["ok"] is False
+    assert slm.fetch_weights("https://example.com/nonexistent-xyz.gguf")["ok"] is False

@@ -1,5 +1,10 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## v0.6 — ✅ DONE (shipped, verified, pushed to main)
+- [x] **Plugin sandbox runtime**: allow-listed pack actions, perm-gated via grant ledger (default-deny), workspace file jail, network off unless `net.fetch` granted, per-call audit, per-pack kill-switch. Verified live: unknown action, jail escape, net-off, kill/revive, 4-row audit.
+- [x] **Cross-device handoff**: goal snapshot (title/progress/next task) relayed sealed, single-accept with expiry + wrong-device rejection, resume nudge on accept. Verified live: create → pending → accept → re-accept 409.
+- [x] **SLM weights drop-in**: URL fetch into the weights slot with size cap, GGUF magic verification, traffic flips automatically via existing status/routing. Bad URLs rejected with cleanup.
+
 ## v0.5 — ✅ DONE (shipped, verified, pushed to main)
 - [x] **Client-held E2E keys**: X25519 device keypairs (private never leaves device), server stores pubkeys only, v2 envelopes via ECDH+HKDF+Fernet, blind relay store-and-forward. Server-verified blind: ciphertext at rest, full client roundtrip through server store.
 - [x] **SLM provider slot**: llama_cpp/transformers/onnx backends, env-configured weights path, status endpoint, fail-soft escalate to Groq. SLM-zone chat integration with usage logging — weights drop in with zero code change.
@@ -38,13 +43,12 @@
 - [x] **Reliability**: per-IP rate limits (heavy endpoints 60/min), request-id tracing, device presence + offline outbox.
 - [x] **DevOps**: Dockerfile, compose, GitHub Actions CI, versioned `/updates/latest`.
 
-## Next (v0.6) — the separation round
-1. **Plugin sandbox runtime**: marketplace packs run in a restricted executor (allow-listed tools, file-scope jail, network off by default) — signed + sandboxed beats Muse's unsigned extensions.
-2. **Cross-device handoff**: start a goal on desktop, continue mid-step on phone — orchestrator state streams over the encrypted relay with conflict-free resume.
-3. **SLM weights drop-in**: download + quantize a small open model into the ready slot; flip SLM-zone traffic local and watch saved-$ compound.
-4. **Merchant services Phase 1**: machine-readable schemas for cabs/technicians/food (see HANDOFF.md thread A) — the India wedge.
+## Next (v0.7) — merchant wedge + hardening
+1. **Merchant services Phase 1** (needs explicit user go — still discussion-only): machine-readable schemas for cabs/technicians/food (see HANDOFF.md thread A).
+2. **SLM quantize + benchmark**: pick weights, measure quality/latency vs Groq per task, publish the numbers on the dashboard.
+3. **Handoff for loops + drafts**: extend snapshots beyond goals (open loops, receipt drafts, packing lists).
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 48 nightly evals gating every release — reliability story.
+- 51 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

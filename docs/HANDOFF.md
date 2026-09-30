@@ -4,20 +4,19 @@
 > until merchant-services building starts. Conversations are RAM; this file is disk.
 
 ## Where we are
-- **Version**: v0.5.0. **Tests**: 48/48 green.
-- **Last shipped**: v0.5 — client-held E2E keys (X25519, server-blind), SLM provider slot + chat integration,
-  wake-word config + streaming voice (VAD, whisper auto-transcribe), spend optimizer (`/usage/optimize`),
-  public share links (signed/revocable/no-auth view), eval-gated auto-deploy (release-gate + CI tagging),
-  research digests (topics + scheduler kind). All live-verified, probe data cleaned.
-- **Before that**: v0.4.x feature scale-up (outfit + bills chat-driven, mobile screens, cloud pack) · v0.4 platform
-  (scheduled autonomy, sandbox, team billing, relay-lite, SLM routing, voice sessions) · v0.3 · v0.2.
+- **Version**: v0.6.0. **Tests**: 51/51 green.
+- **Last shipped**: v0.6 platform — plugin sandbox runtime (allow-list, perm gates, file jail,
+  net-off, audit, kill-switch), cross-device handoff (sealed snapshots, single-accept, resume nudges),
+  SLM weights drop-in (URL fetch, GGUF verify, auto traffic flip). All live-verified, probe data cleaned.
+- **Before that**: v0.5 (E2E keys, SLM slot, wake/streaming, optimizer, share links, release gate, digests) ·
+  v0.4.x (outfit + bills chat-driven, mobile screens, cloud pack) · v0.4 · v0.3 · v0.2.
 - **Repo**: `github.com/rawfounders26-cmyk/Osokai`, branch `main`.
 
 ## What's paused / what's next
-- **v0.5 DONE** — shipped this session per user go.
+- **v0.6 DONE** — shipped this session per user go.
 - **Current front line**: merchant-services ("Muse-connectors for India") — DISCUSSION ONLY, Phase 0 validation.
-  Next build candidates (v0.6): plugin sandbox runtime, cross-device handoff, SLM weights drop-in,
-  merchant-services Phase 1. No code until user says build.
+  Next build candidates (v0.7): merchant Phase 1 (needs explicit go), SLM quantize + benchmark,
+  handoff for loops/drafts. No code until user says build.
 
 ## Standing instructions
 - Don't build without an explicit go from the user. Discussion sessions = no code, no commits except docs.
@@ -63,7 +62,8 @@
 #    cross-device handoff, SLM weights drop-in, merchant-services Phase 1.
 
 ## Session log
-- 2026-09-30: v0.5 shipped + pushed (48 tests: e2e keys, SLM slot, wake/streaming, optimizer,
-  share links, release gate, digests) → HANDOFF + SCALING updated. Next: user picks v0.6 or merchant Phase 1.
+- 2026-09-30: v0.6 platform shipped + pushed (51 tests: sandbox runtime, handoff, SLM fetch) →
+  HANDOFF + SCALING updated. Next: user picks v0.7 or merchant Phase 1.
+- 2026-09-30: v0.5 shipped + pushed (48 tests) → HANDOFF + SCALING updated.
 - 2026-09-30 (earlier): v0.4.x shipped + pushed (40 tests) → cloud pack shipped + pushed (42 tests) →
   merchant-services strategy discussion (no code) → HANDOFF.md created.

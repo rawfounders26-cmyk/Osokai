@@ -44,7 +44,7 @@ _cors = [o.strip() for o in os.getenv("OSOKAI_CORS", "*").split(",") if o.strip(
 app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 mem = Memory()
 
-OSOKAI_VERSION = "0.5.0"
+OSOKAI_VERSION = "0.6.0"
 
 # ---- reliability: request ids + per-IP rate limiting (abuse shield) ----
 import uuid as _uuid
@@ -1542,6 +1542,83 @@ def digest_latest(limit: int = 10, _=Depends(need_auth)):
     except ImportError:
         from digest import latest
     return {"digests": latest(limit)}
+
+# ---- v0.6: plugin sandbox runtime ----
+@app.post("/sandbox/run")
+async def sandbox_run(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.runtime import run
+    except ImportError:
+        from runtime import run
+    r = run(payload.get("skill", ""), payload.get("action", ""), payload.get("args", {}))
+    await hub.push()
+    return r
+
+@app.get("/sandbox/audit")
+def sandbox_audit(skill: str = "", limit: int = 30, _=Depends(need_auth)):
+    try:
+        from app.runtime import audit
+    except ImportError:
+        from runtime import audit
+    return {"audit": audit(skill, limit)}
+
+@app.post("/sandbox/kill")
+async def sandbox_kill(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.runtime import kill, unkill
+    except ImportError:
+        from runtime import kill, unkill
+    r = unkill(payload.get("skill", "")) if payload.get("revive") else kill(payload.get("skill", ""))
+    await hub.push()
+    return r
+
+# ---- v0.6: cross-device handoff ----
+@app.post("/handoff/create")
+async def handoff_create(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.handoff import create
+    except ImportError:
+        from handoff import create
+    r = create(int(payload.get("gid", 0)), payload.get("from_device", "unknown"),
+               payload.get("to_device", ""), payload.get("sealed"))
+    if not r.get("ok"):
+        raise HTTPException(status_code=404, detail=r.get("error", "no such goal"))
+    await hub.push()
+    return r
+
+@app.get("/handoff/pending")
+def handoff_pending(device: str, _=Depends(need_auth)):
+    try:
+        from app.handoff import pending
+    except ImportError:
+        from handoff import pending
+    return {"pending": pending(device)}
+
+@app.post("/handoff/{hid}/accept")
+async def handoff_accept(hid: int, payload: dict, _=Depends(need_auth)):
+    try:
+        from app.handoff import accept
+    except ImportError:
+        from handoff import accept
+    r = accept(hid, payload.get("device", "unknown"))
+    if not r.get("ok"):
+        raise HTTPException(status_code=409, detail=r.get("error", "cannot accept"))
+    await hub.push()
+    return r
+
+# ---- v0.6: SLM weights drop-in ----
+@app.post("/slm/fetch")
+async def slm_fetch(payload: dict, _=Depends(need_auth)):
+    import asyncio as _aio
+    try:
+        from app.slm import fetch_weights
+    except ImportError:
+        from slm import fetch_weights
+    r = await _aio.to_thread(fetch_weights, payload.get("url", ""))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "fetch failed"))
+    await hub.push()
+    return r
 
 # ---- research + agent builder ----
 @app.post("/research")
