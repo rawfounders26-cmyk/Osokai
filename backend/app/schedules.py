@@ -18,7 +18,7 @@ except ImportError:
     from paths import data as _pdata
 
 DB = _pdata("osokai.db")
-KINDS = ("goal_step", "briefing", "research_sweep", "nudge_scan")
+KINDS = ("goal_step", "briefing", "research_sweep", "nudge_scan", "bills_recurring", "settle_reminder")
 
 
 def _db():
@@ -133,6 +133,27 @@ def execute(job: dict) -> dict:
             except ImportError:
                 from proactive import _tick
             return {"ok": True, "note": f"{_tick()} nudge(s)"}
+        if kind == "bills_recurring":
+            try:
+                from app.bills import post_due_recurring
+            except ImportError:
+                from bills import post_due_recurring
+            r = post_due_recurring()
+            return {"ok": True, "note": f"posted: {', '.join(r['posted']) or 'none due'}"}
+        if kind == "settle_reminder":
+            try:
+                from app.bills import settle_up, find_group, list_groups
+                from app.proactive import nudge
+            except ImportError:
+                from bills import settle_up, find_group, list_groups
+                from proactive import nudge
+            g = find_group(args.get("group", "")) if args.get("group") else (list_groups()[:1] or [None])[0]
+            if not g:
+                return {"ok": False, "note": "no bill group"}
+            s = settle_up(g["id"])
+            if s["debts"] and nudge("settle", f"settle:{g['id']}", f"{g['name']}: " + s["reply"][:300]):
+                return {"ok": True, "note": f"reminded {g['name']}"}
+            return {"ok": True, "note": "all settled"}
     except Exception as e:
         return {"ok": False, "note": f"{type(e).__name__}: {e}"[:300]}
     return {"ok": False, "note": "unknown kind"}

@@ -267,3 +267,68 @@ def test_slm_confidence_routing():
     assert confidence("") == 0.0
     assert 0.5 <= confidence("should i buy a house in bangalore") <= 0.9  # SLM zone, escalates today
     assert try_answer("should i buy a house in bangalore") is None
+
+# ---- feature scale-up evals: outfit planner + bill splitting chat intents ----
+
+def test_outfit_bill_intent_parse():
+    from intents import parse
+    cases = [
+        ("plan my outfits for the week", "outfit_plan"),
+        ("what should i wear to a wedding tomorrow", "outfit_occasion"),
+        ("outfit for gym", "outfit_occasion"),
+        ("pack for 3 days in goa", "outfit_pack"),
+        ("i wore the blue shirt", "outfit_wore"),
+        ("laundry done", "outfit_laundry"),
+        ("add blue linen shirt to wardrobe", "outfit_add"),
+        ("split 1200 for dinner with flat", "bill_quick"),
+        ("split dinner 1200 with flat", "bill_quick"),
+        ("settle up flat", "bill_settle_up"),
+        ("settle", "bill_settle_up"),
+        ("repeat rent 9000 monthly in flat paid by me", "bill_repeat"),
+        ("house ledger for flat", "bill_house"),
+    ]
+    for text, want in cases:
+        got, _ = parse(text)
+        assert got and got["type"] == want, f"{text!r} -> {got}"
+
+
+def test_wardrobe_scores_laundry_pack(tmp_path, monkeypatch):
+    import wardrobe
+    monkeypatch.setattr(wardrobe, "DB", str(tmp_path / "w.db"))
+    a = wardrobe.add_item("linen shirt", "blue", "all", "smart-casual")["id"]
+    b = wardrobe.add_item("gym shorts", "black", "all", "activewear")["id"]
+    wardrobe.feedback(a, True)
+    wardrobe.feedback(b, False)
+    items = {i["id"]: i for i in wardrobe.list_items()}
+    assert items[a]["likes"] == 1 and items[b]["dislikes"] == 1
+    assert wardrobe.score(items[a]) > wardrobe.score(items[b])
+    assert wardrobe.occasion_formality("cousin wedding") == "formal"
+    assert wardrobe.occasion_formality("morning gym") == "activewear"
+    wardrobe.mark_worn(a)
+    assert wardrobe.laundry_days() == 7
+    s = wardrobe.suggest()
+    assert s["candidates"][0]["id"] == b  # worn item guarded out by laundry cycle
+    wardrobe.laundry_done()
+    assert len(wardrobe.suggest()["candidates"]) == 2
+    p = wardrobe.pack_trip(3, "Goa")
+    assert p["ok"] and "Goa" in p["reply"]
+
+
+def test_bills_recurring_upi_ledger(tmp_path, monkeypatch):
+    import bills
+    monkeypatch.setattr(bills, "DB", str(tmp_path / "b2.db"))
+    g = bills.create_group("flat", ["Me", "A"])["id"]
+    assert bills.find_group("flat")["id"] == g
+    bills.set_upi(g, "A", "a@upi")
+    assert bills.members(g)[1]["upi"] == "a@upi"
+    bills.add_expense(g, "Dinner", 1000, "Me", {})
+    s = bills.settle_up(g)
+    assert s["debts"] and s["debts"][0]["upi"] == ""  # creditor Me has no UPI yet
+    bills.set_upi(g, "Me", "me@upi")
+    s = bills.settle_up(g)
+    assert s["debts"][0]["upi"].startswith("upi://pay?pa=me%40upi")
+    assert "a%40upi" in bills.upi_link("a@upi", "A", 500)
+    r = bills.add_recurring(g, "Rent", 9000, "Me", {}, 1)
+    assert r["ok"] and len(bills.list_recurring(g)) == 1
+    h = bills.house_ledger(g)
+    assert h["ok"] and h["total"] == 1000 and "flat" in h["reply"]

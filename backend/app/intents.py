@@ -105,6 +105,46 @@ def parse(message: str):
     if tp:
         return {"type": "trip_plan", "origin": tp[0], "dest": tp[1], "days": tp[2]}, None
 
+    # outfit planner: week plan / occasion look / pack / wore / laundry / add
+    m = re.match(r"^(?:plan|organise|organize)(?: my)? (?:outfits|clothes)(?: for the week)?$", t)
+    if m:
+        return {"type": "outfit_plan"}, None
+    m = re.match(r"^(?:what should i wear|what to wear|outfit for|wear to|dress for)(?: to| for)?\s+(.+?)(?:\s+(today|tomorrow|on \w+))?$", t)
+    if m:
+        return {"type": "outfit_occasion", "occasion": m.group(1).strip(), "day": (m.group(2) or "").strip()}, None
+    m = re.match(r"^pack(?:ing)?(?: list)? for (\d+) days?(?: in (.+))?$", t)
+    if m:
+        return {"type": "outfit_pack", "days": int(m.group(1)), "dest": (m.group(2) or "").strip()}, None
+    m = re.match(r"^(?:i )?wore (?:the )?(.+)$", t) or re.match(r"^log outfit:?\s+(.+)$", t)
+    if m:
+        return {"type": "outfit_wore", "item": m.group(1).strip()}, None
+    if re.match(r"^laundry (?:done|day)$", t):
+        return {"type": "outfit_laundry"}, None
+    m = re.match(r"^add (.+?) to (?:my )?wardrobe$", t)
+    if m:
+        return {"type": "outfit_add", "desc": m.group(1).strip()}, None
+
+    # bills: quick split / settle up / recurring / house ledger
+    m = re.match(r"^split (\d[\d,]*)\s+for\s+(.+?)\s+(?:with|in|among)\s+(.+)$", t)
+    if m:
+        return {"type": "bill_quick", "amount": m.group(1).replace(",", ""),
+                "title": m.group(2).strip(), "group": m.group(3).strip()}, None
+    m = re.match(r"^split (.+?)\s+(\d[\d,]*)(?:\s+(?:with|in|among)\s+(.+))?$", t)
+    if m:
+        return {"type": "bill_quick", "title": m.group(1).strip(), "amount": m.group(2).replace(",", ""),
+                "group": (m.group(3) or "").strip()}, None
+    m = re.match(r"^settle(?: up)?(?: (.+))?$", t)
+    if m:
+        return {"type": "bill_settle_up", "group": (m.group(1) or "").strip()}, None
+    m = re.match(r"^repeat (.+?) (\d[\d,]*)\s+(monthly|weekly)(?: in (.+?))?(?: paid by (.+))?$", t)
+    if m:
+        return {"type": "bill_repeat", "title": m.group(1).strip(), "amount": m.group(2).replace(",", ""),
+                "freq": m.group(3), "group": (m.group(4) or "").strip(),
+                "paid_by": (m.group(5) or "me").strip()}, None
+    m = re.match(r"^(?:house ledger|monthly (?:bills|ledger|summary))(?: for (.+))?$", t)
+    if m:
+        return {"type": "bill_house", "group": (m.group(1) or "").strip()}, None
+
     # open <app>
     m = re.match(r"^open\s+([a-z0-9 .+]+)$", t)
     if m:
@@ -274,6 +314,84 @@ def execute(action: dict, device: str = "unknown"):
         except ImportError:
             from trip import plan_trip
         return plan_trip(action["origin"], action["dest"], action.get("days", 3))
+    if at in ("outfit_plan", "outfit_occasion", "outfit_pack", "outfit_wore", "outfit_laundry", "outfit_add"):
+        try:
+            from app import wardrobe as _w
+        except ImportError:
+            import wardrobe as _w
+        if at == "outfit_plan":
+            return _w.plan_week()["reply"]
+        if at == "outfit_occasion":
+            day = (action.get("day") or "").lower()
+            iso = ""
+            if day in ("today", "tomorrow"):
+                import datetime as _dt
+                iso = (_dt.date.today() + _dt.timedelta(days=1 if day == "tomorrow" else 0)).isoformat()
+            return _w.plan_occasion(action.get("occasion", ""), iso)["reply"]
+        if at == "outfit_pack":
+            r = _w.pack_trip(action.get("days", 2), action.get("dest", ""))
+            return r["reply"]
+        if at == "outfit_wore":
+            want = action.get("item", "").lower()
+            hits = [i for i in _w.list_items() if want in (f"{i['color']} {i['category']}".lower()) or want in i["category"].lower()]
+            if not hits:
+                return f"No '{action.get('item')}' in the wardrobe — add it first ('add … to wardrobe')."
+            _w.mark_worn(hits[0]["id"])
+            return f"Logged: wore {hits[0]['color']} {hits[0]['category']} ✓ ({hits[0]['wears'] + 1}x total)"
+        if at == "outfit_laundry":
+            _w.laundry_done()
+            return "Laundry done — full wardrobe fresh again. 🧺"
+        if at == "outfit_add":
+            desc = action.get("desc", "")
+            words = desc.split()
+            colors = {"white", "black", "blue", "red", "green", "yellow", "pink", "grey", "gray",
+                      "brown", "beige", "navy", "maroon", "purple", "orange", "teal", "olive", "cream"}
+            color = words[0] if words and words[0] in colors else ""
+            category = " ".join(words[1:] if color else words) or desc
+            r = _w.add_item(category, color)
+            return f"Added: {color} {category} (#{r['id']}). Tell me its season/formality any time."
+    if at in ("bill_quick", "bill_settle_up", "bill_repeat", "bill_house"):
+        try:
+            from app import bills as _b
+        except ImportError:
+            import bills as _b
+        def _grp(name):
+            g = _b.find_group(name) if name else None
+            if not g:
+                allg = _b.list_groups()
+                if not allg:
+                    return None, "No bill groups yet — create one on the Bill screen first."
+                if len(allg) == 1:
+                    return allg[0], ""
+                return None, f"Which group? {', '.join(g['name'] for g in allg)}"
+            return g, ""
+        if at == "bill_quick":
+            g, err = _grp(action.get("group", ""))
+            if not g:
+                return err
+            r = _b.add_expense(g["id"], action.get("title", "Split"), float(action.get("amount", 0) or 0), "Me", {})
+            if not r.get("ok"):
+                return f"Split failed: {r.get('error')}"
+            return f"Split ₹{action['amount']} for “{action.get('title')}” across {g['name']} ✓"
+        if at == "bill_settle_up":
+            g, err = _grp(action.get("group", ""))
+            if not g:
+                return err
+            return _b.settle_up(g["id"])["reply"]
+        if at == "bill_repeat":
+            if action.get("freq") != "monthly":
+                return "I do monthly repeats for now — say 'repeat <what> <amount> monthly in <group>'."
+            g, err = _grp(action.get("group", ""))
+            if not g:
+                return err
+            _b.add_recurring(g["id"], action.get("title", ""), float(action.get("amount", 0) or 0),
+                             action.get("paid_by", "Me").title(), {}, 1)
+            return f"Monthly repeat set: {action.get('title')} ₹{action['amount']} in {g['name']} ✓"
+        if at == "bill_house":
+            g, err = _grp(action.get("group", ""))
+            if not g:
+                return err
+            return _b.house_ledger(g["id"])["reply"]
     if at == "img":
         try:
             from app import img as _img

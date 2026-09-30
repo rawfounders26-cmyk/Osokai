@@ -461,6 +461,14 @@ async def chat(body: ChatIn, _=Depends(need_auth)):
         await hub.push()
         return {"reply": f"Email to {to} drafted (#{em['id']}). Approve #{aid} to send.",
                 "approval_required": True, "approval_id": aid, "kind": "email"}
+    # outfit/bills fast intents run before calendar (else "add X to wardrobe" becomes an event)
+    _pre, _ = intent_parse(body.message)
+    if _pre and _pre.get("type", "").startswith(("outfit_", "bill_")):
+        mem.add("user", body.message)
+        reply = _san(intent_run(_pre, body.device))
+        mem.add("Osok-AI", reply)
+        await hub.push()
+        return {"reply": reply, "approval_required": False, "action": _pre["type"]}
     # calendar NL: add / list / cancel
     try:
         from app import calendar as _cal
@@ -1538,6 +1546,113 @@ async def w_feedback(payload: dict, _=Depends(need_auth)):
 @app.get("/wardrobe/prefs")
 def w_prefs(_=Depends(need_auth)):
     return {"prefs": _w().get_prefs()}
+
+@app.get("/wardrobe/plan-week")
+def w_plan_week(_=Depends(need_auth)):
+    return _w().plan_week()
+
+@app.post("/wardrobe/plan-occasion")
+async def w_plan_occasion(payload: dict, _=Depends(need_auth)):
+    return _w().plan_occasion(payload.get("occasion", ""), payload.get("day", ""))
+
+@app.post("/wardrobe/pack")
+async def w_pack(payload: dict, _=Depends(need_auth)):
+    r = _w().pack_trip(int(payload.get("days", 2)), payload.get("dest", ""))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("reply", "pack failed"))
+    return r
+
+@app.post("/wardrobe/laundry-done")
+async def w_laundry(_=Depends(need_auth)):
+    r = _w().laundry_done()
+    await hub.push()
+    return r
+
+@app.post("/wardrobe/intake")
+async def w_intake(payload: dict, _=Depends(need_auth)):
+    """Photo intake: {image_b64} -> vision describes -> wardrobe item."""
+    if not payload.get("image_b64"):
+        raise HTTPException(status_code=400, detail="image_b64 required")
+    r = _w().intake_image(payload["image_b64"])
+    if not r.get("ok"):
+        raise HTTPException(status_code=502, detail=r.get("reply", "vision failed"))
+    await hub.push()
+    return r
+
+# ---- bills scale-up: settle-up, recurring, UPI, team-house, receipt scan ----
+@app.get("/bills/settle-up/{gid}")
+def bills_settle_up(gid: int, _=Depends(need_auth)):
+    try:
+        from app.bills import settle_up
+    except ImportError:
+        from bills import settle_up
+    return settle_up(gid)
+
+@app.post("/bills/upi")
+async def bills_upi(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.bills import set_upi
+    except ImportError:
+        from bills import set_upi
+    r = set_upi(int(payload.get("gid", 0)), payload.get("name", "Me"), payload.get("upi", ""))
+    await hub.push()
+    return r
+
+@app.post("/bills/recurring")
+async def bills_rec_add(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.bills import add_recurring
+    except ImportError:
+        from bills import add_recurring
+    r = add_recurring(int(payload.get("gid", 0)), payload.get("title", ""), float(payload.get("amount", 0)),
+                      payload.get("paid_by", "Me"), payload.get("splits") or {}, int(payload.get("day", 1)))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad recurring"))
+    await hub.push()
+    return r
+
+@app.get("/bills/recurring")
+def bills_rec_list(gid: int = 0, _=Depends(need_auth)):
+    try:
+        from app.bills import list_recurring
+    except ImportError:
+        from bills import list_recurring
+    return {"recurring": list_recurring(gid)}
+
+@app.post("/bills/link-team")
+async def bills_link_team(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.bills import link_team
+    except ImportError:
+        from bills import link_team
+    r = link_team(int(payload.get("gid", 0)), int(payload.get("team", 0)))
+    await hub.push()
+    return r
+
+@app.get("/bills/house-ledger/{gid}")
+def bills_house(gid: int, ym: str = "", _=Depends(need_auth)):
+    try:
+        from app.bills import house_ledger
+    except ImportError:
+        from bills import house_ledger
+    r = house_ledger(gid, ym)
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad ledger"))
+    return r
+
+@app.post("/bills/receipt")
+async def bills_receipt(payload: dict, _=Depends(need_auth)):
+    """Receipt scan: {image_b64} -> draft expense. Confirm via POST /bills/expenses."""
+    if not payload.get("image_b64"):
+        raise HTTPException(status_code=400, detail="image_b64 required")
+    try:
+        from app.bills import parse_receipt
+    except ImportError:
+        from bills import parse_receipt
+    r = parse_receipt(payload["image_b64"])
+    if not r.get("ok"):
+        raise HTTPException(status_code=502, detail=r.get("error", "scan failed"))
+    return r
 
 @app.patch("/connectors/{cid}")
 async def connector_patch(cid: str, payload: dict, _=Depends(need_auth)):

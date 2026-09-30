@@ -8,12 +8,17 @@ import { colors, radius, spacing } from '../services/theme';
 
 export default function SplitScreen() {
   const insets = useSafeAreaInsets();
-  const { gid } = useLocalSearchParams();
+  const { gid, title: pTitle, total: pTotal } = useLocalSearchParams();
   const [group, setGroup] = useState(null);
   const [title, setTitle] = useState('Team Dinner');
   const [total, setTotal] = useState('');
   const [shares, setShares] = useState({});
   const [paidBy, setPaidBy] = useState('Me');
+
+  useEffect(() => {
+    if (pTitle) setTitle(String(pTitle));
+    if (pTotal) setTotal(String(pTotal));
+  }, [pTitle, pTotal]);
 
   useEffect(() => {
     (async () => {

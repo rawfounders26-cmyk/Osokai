@@ -380,6 +380,22 @@ export const marketInstall = (name) => post('/marketplace/install', { name });
 export const teamsList = () => get('/teams').then(j => j.teams || []);
 export const voiceCommand = (text) => post('/voice/command', { text, device: 'mobile-app' });
 export const goalAutoStep = (gid) => post(`/goaltrees/${gid}/auto-step`, { device: 'mobile-app' });
+
+// outfit planner scale-up
+export const wardrobePlanWeek = () => get('/wardrobe/plan-week');
+export const wardrobePlanOccasion = (occasion, day = '') => post('/wardrobe/plan-occasion', { occasion, day });
+export const wardrobePack = (days, dest = '') => post('/wardrobe/pack', { days, dest });
+export const wardrobeLaundry = () => post('/wardrobe/laundry-done', {});
+export const wardrobeIntake = (image_b64) => post('/wardrobe/intake', { image_b64 });
+
+// bill splitting scale-up
+export const billSettleUp = (gid) => get(`/bills/settle-up/${gid}`);
+export const billSetUpi = (gid, name, upi) => post('/bills/upi', { gid, name, upi });
+export const billRecurringList = (gid) => get(`/bills/recurring?gid=${gid}`);
+export const billRecurringAdd = (gid, title, amount, paid_by = 'Me', day = 1) =>
+  post('/bills/recurring', { gid, title, amount, paid_by, day });
+export const billHouseLedger = (gid) => get(`/bills/house-ledger/${gid}`);
+export const billReceipt = (image_b64) => post('/bills/receipt', { image_b64 });
 // live sync: one socket per app session, backoff reconnect, heartbeat-safe
 let syncSock = null;
 let syncDelay = 5000;

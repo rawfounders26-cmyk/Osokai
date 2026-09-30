@@ -3,7 +3,9 @@ import { useState, useCallback } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, RefreshControl, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
-import { wardrobeItems, wardrobeAdd, wardrobeSuggest, wardrobeFeedback, wardrobeWorn, wardrobePrefs } from '../services/api';
+import { wardrobeItems, wardrobeAdd, wardrobeSuggest, wardrobeFeedback, wardrobeWorn, wardrobePrefs,
+  wardrobePlanWeek, wardrobePack, wardrobeLaundry, wardrobeIntake } from '../services/api';
+import * as ImagePicker from 'expo-image-picker';
 import { colors, radius, spacing } from '../services/theme';
 
 export default function OutfitScreen() {
@@ -14,6 +16,10 @@ export default function OutfitScreen() {
   const [form, setForm] = useState({ category: '', color: '', season: 'all', formality: 'casual' });
   const [occ, setOcc] = useState('');
   const [ref, setRef] = useState(false);
+  const [week, setWeek] = useState([]);
+  const [packDays, setPackDays] = useState('3');
+  const [packDest, setPackDest] = useState('');
+  const [packReply, setPackReply] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -41,6 +47,35 @@ export default function OutfitScreen() {
     try { await wardrobeFeedback(id, good); load(); } catch (e) { Alert.alert('error', `${e.message}`); }
   };
 
+  const planMyWeek = async () => {
+    try {
+      const r = await wardrobePlanWeek();
+      setWeek(r.days || []);
+    } catch (e) { Alert.alert('error', `${e.message}`); }
+  };
+
+  const packForTrip = async () => {
+    try {
+      const r = await wardrobePack(Math.max(1, parseInt(packDays) || 3), packDest.trim());
+      setPackReply(r.reply || '');
+    } catch (e) { Alert.alert('error', `${e.message}`); }
+  };
+
+  const freshLaundry = async () => {
+    try { await wardrobeLaundry(); load(); Alert.alert('Fresh cycle — full wardrobe wearable again'); }
+    catch (e) { Alert.alert('error', `${e.message}`); }
+  };
+
+  const photoIntake = async () => {
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.6 });
+      if (res.canceled || !res.assets?.[0]?.base64) return;
+      const r = await wardrobeIntake(res.assets[0].base64);
+      Alert.alert('Added', r.reply || 'added to wardrobe');
+      load();
+    } catch (e) { Alert.alert('error', `${e.message}`); }
+  };
+
   const w = sug?.weather || {};
   const cands = (sug?.candidates || []).slice(0, 3);
 
@@ -64,6 +99,27 @@ export default function OutfitScreen() {
             </View>
           ))}
           {(sug?.prefs || []).slice(0, 3).map((p, i) => <Text key={i} style={s.pref}>· remembers: {p}</Text>)}
+        </View>
+
+        <View style={s.card}>
+          <Text style={s.cardT}>My week — calendar-aware, no repeats</Text>
+          <TouchableOpacity style={s.btn} onPress={planMyWeek}><Text style={s.btnT}>Plan my week</Text></TouchableOpacity>
+          {week.map((d, i) => <Text key={i} style={s.pickT}>{d.day} <Text style={s.pickS}>({d.event})</Text>{'\n'}{d.wear}</Text>)}
+        </View>
+
+        <View style={s.card}>
+          <Text style={s.cardT}>Pack for a trip</Text>
+          <View style={s.packRow}>
+            <TextInput style={[s.input, s.packDays]} value={packDays} onChangeText={setPackDays} placeholder="days" placeholderTextColor={colors.sub} keyboardType="numeric" />
+            <TextInput style={[s.input, s.packDest]} value={packDest} onChangeText={setPackDest} placeholder="Where to? (Goa)" placeholderTextColor={colors.sub} />
+          </View>
+          <TouchableOpacity style={s.btn} onPress={packForTrip}><Text style={s.btnT}>Pack my bag</Text></TouchableOpacity>
+          {!!packReply && <Text style={s.pickT}>{packReply}</Text>}
+        </View>
+
+        <View style={s.btnRow}>
+          <TouchableOpacity style={[s.btn, s.half]} onPress={freshLaundry}><Text style={s.btnT}>🧺 Laundry done</Text></TouchableOpacity>
+          <TouchableOpacity style={[s.btn, s.half]} onPress={photoIntake}><Text style={s.btnT}>📷 Add from photo</Text></TouchableOpacity>
         </View>
 
         <Text style={s.sub}>Wardrobe ({items.length})</Text>
@@ -109,6 +165,11 @@ const s = StyleSheet.create({
   input: { backgroundColor: colors.surface, color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 12 },
   btn: { backgroundColor: '#8e4ec6', borderRadius: radius.md, padding: 13, alignItems: 'center' },
   btnT: { color: '#fff', fontWeight: '800' },
+  btnRow: { flexDirection: 'row', gap: 10 },
+  half: { flex: 1 },
+  packRow: { flexDirection: 'row', gap: 8 },
+  packDays: { flex: 1 },
+  packDest: { flex: 3 },
   pick: { backgroundColor: '#1d1830', borderRadius: radius.md, padding: 12, gap: 6 },
   pickT: { color: '#fff', fontWeight: '700' },
   pickS: { color: colors.sub, fontWeight: '400' },

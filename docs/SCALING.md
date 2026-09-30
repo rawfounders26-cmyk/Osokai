@@ -1,5 +1,10 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## v0.4.x — ✅ DONE: outfit planner + bill splitting scale-up (chat-driven)
+- [x] **Outfit**: calendar-aware occasion looks, 7-day no-repeat week plan, trip pack-a-bag with live weather, learned item scores (likes/wears/dislikes), laundry-cycle guard + reset, photo intake via vision. Chat: `plan my outfits`, `what should i wear to …`, `pack for N days in …`, `i wore …`, `laundry done`, `add … to wardrobe`.
+- [x] **Bills**: chat quick-split, settle-up with one-tap UPI links, member UPI ids, monthly repeats (scheduler-posted), house ledger, receipt-scan drafts via vision, team-house links. Chat: `split 1200 for dinner with flat`, `settle up flat`, `repeat rent 9000 monthly in flat`, `house ledger for flat`.
+- [x] **Surfaces**: mobile Outfit screen (week plan, pack, laundry, photo intake), Bill screen (scan receipt, UPI pay buttons, repeats, ledger), Split screen receipt prefill, Command Port works via chat with zero changes.
+
 ## v0.4 — ✅ DONE (shipped, verified, pushed to main)
 - [x] **Scheduled autonomy**: cron-style jobs (daily HH:MM or every-N-min) for goal auto-steps, compiled briefings, research sweeps, nudge scans. 30s scheduler, run log, run-now, hub push.
 - [x] **Marketplace sandbox enforcement**: risk-tiered perms, high-risk install ack, grant ledger with default-deny runtime `check()`/`guard()`, audit trail, star ratings + install-based reputation with low-rep warnings.

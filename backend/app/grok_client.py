@@ -42,3 +42,27 @@ def chat_with_grok(message: str) -> str:
         return reply
     except Exception as e:
         return f"[osok-ai-error] LLM call failed: {e}"
+
+
+def chat_with_vision(prompt: str, b64_image: str) -> str:
+    """Image understanding via Groq vision model. Returns raw text (often JSON)."""
+    import base64 as _b64
+    key = os.getenv("GROQ_API_KEY", "") or os.getenv("GROK_API_KEY", "")
+    model = os.getenv("GROK_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+    if not key or key.startswith("paste-"):
+        return "[osokai-stub] Set GROQ_API_KEY in backend/.env for vision."
+    if not key.startswith("gsk_"):
+        return "[osok-ai-error] vision needs a Groq (gsk_) key"
+    try:
+        r = _client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json={"model": model, "max_tokens": 800, "messages": [{
+                "role": "user", "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}}]}]},
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"[osok-ai-error] vision call failed: {e}"
