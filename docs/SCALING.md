@@ -8,7 +8,7 @@
 - **Reliability**: per-IP rate limits (heavy endpoints 60/min), request-id tracing, device presence + offline outbox.
 - **DevOps**: Dockerfile, compose, GitHub Actions CI, versioned `/updates/latest`.
 
-## Next (v0.3) — vs Instinct & Muse
+## Next (v0.3) — 
 1. **On-device small model**: route trivial chat locally (zero latency/cost), escalate to Groq only when stuck. Instinct is cloud-only; Muse rents models — local-first is the moat.
 2. **Skill marketplace**: versioned, signed community skills with sandbox permissions. Muse has extensions; ours are signed + policy-gated by vault-2.
 3. **E2E-encrypted sync**: replace LAN token sync with encrypted cloud relay (Supabase) so phone works off-network. Instinct does this; we keep the local-first guarantee.
