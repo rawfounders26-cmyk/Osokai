@@ -85,10 +85,18 @@ def list_market():
     return out
 
 
-def install(name: str) -> dict:
+def install(name: str, ack_high_risk: bool = False) -> dict:
     v = verify(name)
     if not v["ok"]:
         return v
+    try:
+        from app.sandbox import HIGH_RISK, grant, reputation, MIN_REP_WARN
+    except ImportError:
+        from sandbox import HIGH_RISK, grant, reputation, MIN_REP_WARN
+    risky = [p for p in v["manifest"].get("perms", []) if p in HIGH_RISK]
+    if risky and not ack_high_risk:
+        return {"ok": False, "error": f"high-risk permissions need explicit ack: {risky}",
+                "ack_required": risky}
     pack, _ = _read_pack(name)
     dest = os.path.normpath(os.path.join(ROLES, name))
     if not dest.startswith(ROLES):
@@ -107,6 +115,8 @@ def install(name: str) -> dict:
     db.execute("INSERT OR REPLACE INTO market_installed(name, version, ts, enabled) VALUES(?,?,?,?)",
                (name, v["manifest"].get("version", "?"), time.time(), 1))
     db.commit()
+    grant(name, v["manifest"].get("perms", []))  # sandbox ledger: declared perms only
+    rep = reputation(name)
     try:
         try:
             import app.skills_index as _si
@@ -115,7 +125,10 @@ def install(name: str) -> dict:
         _si._cache = None  # rescan roles dir on next route()
     except Exception:
         pass
-    return {"ok": True, "installed": name}
+    out = {"ok": True, "installed": name}
+    if rep.get("warn"):
+        out["warning"] = f"low publisher rating ({rep['stars']}★) — review the pack before enabling"
+    return out
 
 
 def set_enabled(name: str, enabled: bool) -> dict:
@@ -132,4 +145,12 @@ def uninstall(name: str) -> dict:
     db = _db()
     db.execute("DELETE FROM market_installed WHERE name=?", (name,))
     db.commit()
+    try:
+        try:
+            from app.sandbox import revoke
+        except ImportError:
+            from sandbox import revoke
+        revoke(name)
+    except Exception:
+        pass
     return {"ok": True, "removed": name}

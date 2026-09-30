@@ -192,3 +192,78 @@ def test_teams_flow(tmp_path, monkeypatch):
     r = teams.team_resolve(a["id"], "cto", True)
     assert r["approval"]["status"] == "allowed" and r["approval"]["by"] == "cto"
     assert teams.team_pending(t["id"]) == []
+
+# ---- v0.4 scale-up evals: schedules, sandbox, team roles/billing, relay, SLM routing ----
+
+def test_schedules_crud_and_run(tmp_path, monkeypatch):
+    import schedules
+    monkeypatch.setattr(schedules, "DB", str(tmp_path / "s.db"))
+    j = schedules.create("scan", "nudge_scan", {}, every_min=60)
+    assert j["ok"] and len(schedules.list_jobs()) == 1
+    assert schedules.create("bad", "nope")["ok"] is False
+    assert schedules.create("noname", "briefing")["ok"] is False  # no schedule
+    r = schedules.execute({"kind": "nudge_scan", "args": {}})
+    assert r["ok"]
+    schedules.set_enabled(j["id"], False)
+    assert schedules.list_jobs()[0]["enabled"] is False
+    schedules.remove(j["id"])
+    assert schedules.list_jobs() == []
+
+
+def test_sandbox_gates_and_reputation(tmp_path, monkeypatch):
+    import sandbox
+    monkeypatch.setattr(sandbox, "DB", str(tmp_path / "sb.db"))
+    assert sandbox.check("demo", "files.write") is False  # default deny
+    sandbox.grant("demo", ["files.read"])
+    assert sandbox.check("demo", "files.read") is True
+    assert sandbox.check("demo", "vault.read") is False
+    try:
+        sandbox.guard("demo", "vault.read")
+        assert False, "should raise"
+    except PermissionError:
+        pass
+    assert sandbox.reputation("demo")["stars"] == 0.0
+    sandbox.rate("demo", "u1", 5)
+    assert sandbox.reputation("demo")["stars"] == 5.0
+
+
+def test_team_roles_and_billing(tmp_path, monkeypatch):
+    import teams
+    monkeypatch.setattr(teams, "DB", str(tmp_path / "t2.db"))
+    t = teams.create_team("acme", owner="ceo")
+    tid = t["id"]
+    teams.add_member(tid, "cto")
+    assert teams.role_of(tid, "ceo") == "owner"
+    assert teams.can(tid, "ceo", "manage") and not teams.can(tid, "cto", "manage")
+    assert teams.set_role(tid, "cto", "ceo", "member")["ok"] is False  # not admin
+    assert teams.set_role(tid, "ceo", "cto", "admin")["ok"]
+    assert teams.set_role(tid, "cto", "intern", "viewer")["ok"]  # admin can add seats
+    assert teams.role_of(tid, "intern") == "viewer"
+    assert not teams.can(tid, "intern", "resolve")
+    a = teams.ask_team(tid, "buy domain?")
+    assert teams.team_resolve(a["id"], "intern", True)["ok"] is False  # viewer denied
+    assert teams.team_resolve(a["id"], "cto", True)["approval"]["by"] == "cto"
+    assert teams.set_budget(tid, "cto", 10.0)["ok"]
+    sp = teams.spend(tid)
+    assert sp["cap_usd"] == 10.0 and sp["total_usd"] == 0.0 and not sp["over_budget"]
+
+
+def test_relay_sealed_roundtrip(tmp_path, monkeypatch):
+    import relay
+    monkeypatch.setattr(relay, "DB", str(tmp_path / "rl.db"))
+    monkeypatch.setenv("OSOKAI_AUTH_TOKEN", "relay-test-key")
+    r = relay.seal("phone", {"text": "secret hello"})
+    assert r["ok"]
+    envs = relay.pull("phone")
+    assert len(envs) == 1
+    assert "secret hello" not in envs[0]["envelope"]  # ciphertext at rest
+    assert relay.unseal(envs[0]["envelope"]) == {"text": "secret hello"}
+    assert relay.pull("phone") == []  # delivered once
+
+
+def test_slm_confidence_routing():
+    from local import confidence, try_answer
+    assert confidence("what time is it") == 1.0
+    assert confidence("") == 0.0
+    assert 0.5 <= confidence("should i buy a house in bangalore") <= 0.9  # SLM zone, escalates today
+    assert try_answer("should i buy a house in bangalore") is None

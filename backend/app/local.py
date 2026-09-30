@@ -72,3 +72,18 @@ def try_answer(text: str):
     if t in ("are you online", "are you there", "ping", "status"):
         return "Online and local-first. All systems nominal."
     return None
+
+
+def confidence(text: str) -> float:
+    """0..1 score for on-device answering. >=0.9 answers locally;
+    0.5-0.9 is SLM territory (escalates today); below is Groq."""
+    t = (text or "").strip().lower()
+    if not t or len(t) > 200:
+        return 0.0
+    if try_answer(text) is not None:
+        return 1.0
+    if re.fullmatch(r"(who|what|when|where|how|why|is|are|can|do|does|will|should)[ ,].*\??", t):
+        return 0.7  # well-formed question: future SLM, Groq today
+    if len(t.split()) <= 6:
+        return 0.55
+    return 0.2

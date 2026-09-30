@@ -22,19 +22,40 @@ def _db():
     db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
     db.execute("""CREATE TABLE IF NOT EXISTS usage_log(
         id INTEGER PRIMARY KEY, task TEXT, model TEXT, tokens INT, ms INT, ts REAL)""")
+    try:
+        db.execute("ALTER TABLE usage_log ADD COLUMN actor TEXT DEFAULT ''")
+    except Exception:
+        pass
     db.execute("CREATE TABLE IF NOT EXISTS budgets(id INTEGER PRIMARY KEY CHECK(id=1), monthly_cap_usd REAL)")
     return db
+
+
+# actor attribution (device/user) flows via contextvar so deep LLM calls stay tagged
+import contextvars as _cv
+_actor: _cv.ContextVar = _cv.ContextVar("osokai_actor", default="")
+
+
+def set_actor(name: str):
+    _actor.set(name or "")
+
+
+def current_actor() -> str:
+    try:
+        return _actor.get()
+    except Exception:
+        return ""
 
 
 def estimate_tokens(prompt: str, reply: str) -> int:
     return max(1, (len(prompt or "") + len(reply or "")) // 4)
 
 
-def log(task: str, model: str, prompt: str, reply: str, ms: int = 0):
+def log(task: str, model: str, prompt: str, reply: str, ms: int = 0, actor: str = "", tokens: int = 0):
     try:
         db = _db()
-        db.execute("INSERT INTO usage_log(task, model, tokens, ms, ts) VALUES(?,?,?,?,?)",
-                   ((task or "")[:200], (model or "")[:80], estimate_tokens(prompt, reply), ms, time.time()))
+        db.execute("INSERT INTO usage_log(task, model, tokens, ms, ts, actor) VALUES(?,?,?,?,?,?)",
+                   ((task or "")[:200], (model or "")[:80], tokens or estimate_tokens(prompt, reply),
+                    ms, time.time(), (actor or current_actor())[:120]))
         db.commit()
     except Exception:
         pass
@@ -62,8 +83,23 @@ def summary(days: int = 30):
                                        "WHERE ts>=? GROUP BY task ORDER BY SUM(tokens) DESC LIMIT 10", (since,))]
     except Exception:
         pass
-    return {"months": months, "by_task": by_task, "month_spent_usd": spent,
-            "monthly_cap_usd": cap, "over_budget": bool(cap and spent >= cap)}
+    by_actor = []
+    try:
+        by_actor = [{"actor": r[0] or "?", "calls": r[1], "tokens": r[2] or 0,
+                     "cost_usd": round((r[2] or 0) / 1000 * PRICE_PER_1K, 4)}
+                    for r in db.execute("SELECT actor, COUNT(*), SUM(tokens) FROM usage_log "
+                                        "WHERE ts>=? GROUP BY actor ORDER BY SUM(tokens) DESC LIMIT 10", (since,))]
+    except Exception:
+        pass
+    local_calls = 0
+    try:
+        local_calls = db.execute("SELECT COUNT(*) FROM usage_log WHERE task='local' AND ts>=?", (since,)).fetchone()[0]
+    except Exception:
+        pass
+    avg_cost = (spent / max(1, sum(m["calls"] for m in months if m["month"] == month_key))) if months else 0
+    return {"months": months, "by_task": by_task, "by_actor": by_actor, "month_spent_usd": spent,
+            "monthly_cap_usd": cap, "over_budget": bool(cap and spent >= cap),
+            "local_calls": local_calls, "est_saved_usd": round(local_calls * (avg_cost or PRICE_PER_1K), 4)}
 
 
 def get_budget():

@@ -43,7 +43,7 @@ app = FastAPI(title="Osok-AI API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 mem = Memory()
 
-OSOKAI_VERSION = "0.3.0"
+OSOKAI_VERSION = "0.4.0"
 
 # ---- reliability: request ids + per-IP rate limiting (abuse shield) ----
 import uuid as _uuid
@@ -77,9 +77,12 @@ async def _start_proactive():
     try:
         try:
             from app.proactive import loop as _ploop
+            from app.schedules import loop as _sloop
         except ImportError:
             from proactive import loop as _ploop
+            from schedules import loop as _sloop
         _aio.create_task(_ploop())
+        _aio.create_task(_sloop())
     except Exception:
         pass
 
@@ -419,9 +422,22 @@ async def chat(body: ChatIn, _=Depends(need_auth)):
     except ImportError:
         from local import try_answer as _local_ans
     _loc = _local_ans(body.message)
+    try:
+        from app.usage import set_actor as _set_actor
+    except ImportError:
+        try:
+            from usage import set_actor as _set_actor
+        except ImportError:
+            _set_actor = lambda *a: None
+    _set_actor(body.device)
     if _loc:
         mem.add("user", body.message)
         mem.add("Osok-AI", _loc)
+        try:
+            from app.usage import log as _ulog
+        except ImportError:
+            from usage import log as _ulog
+        _ulog("local", "on-device", body.message, _loc, 0, tokens=0)
         await hub.push()
         return {"reply": _loc, "approval_required": False, "action": "local"}
     # loops capture first: "remind me to pay X" is a reminder, not a payment
@@ -928,7 +944,7 @@ async def market_install(payload: dict, _=Depends(need_auth)):
         from app.marketplace import install
     except ImportError:
         from marketplace import install
-    r = install(payload.get("name", ""))
+    r = install(payload.get("name", ""), bool(payload.get("ack_high_risk", False)))
     if not r.get("ok"):
         raise HTTPException(status_code=400, detail=r.get("error", "install failed"))
     await hub.push()
@@ -1030,6 +1046,8 @@ async def team_resolve(aid: int, payload: dict, _=Depends(need_auth)):
     except ImportError:
         from teams import team_resolve
     r = team_resolve(aid, payload.get("user", "me"), bool(payload.get("allow", False)))
+    if not r.get("ok"):
+        raise HTTPException(status_code=403, detail=r.get("error", "denied"))
     await hub.push()
     return r
 
@@ -1083,6 +1101,212 @@ def voice_speak(payload: dict, _=Depends(need_auth)):
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": f"TTS failed: {e}"}
+
+# ---- v0.4: scheduled autonomy ----
+@app.post("/schedules")
+async def sched_create(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.schedules import create
+    except ImportError:
+        from schedules import create
+    r = create(payload.get("name", "job"), payload.get("kind", ""),
+               payload.get("args", {}), payload.get("at_time", ""), int(payload.get("every_min", 0)))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad job"))
+    await hub.push()
+    return r
+
+@app.get("/schedules")
+def sched_list(_=Depends(need_auth)):
+    try:
+        from app.schedules import list_jobs
+    except ImportError:
+        from schedules import list_jobs
+    return {"jobs": list_jobs()}
+
+@app.post("/schedules/{jid}/enable")
+async def sched_enable(jid: int, payload: dict, _=Depends(need_auth)):
+    try:
+        from app.schedules import set_enabled
+    except ImportError:
+        from schedules import set_enabled
+    r = set_enabled(jid, bool(payload.get("enabled", True)))
+    await hub.push()
+    return r
+
+@app.post("/schedules/{jid}/run-now")
+async def sched_run_now(jid: int, _=Depends(need_auth)):
+    import asyncio as _aio
+    try:
+        from app.schedules import list_jobs, execute, _log_run
+    except ImportError:
+        from schedules import list_jobs, execute, _log_run
+    job = next((j for j in list_jobs() if j["id"] == jid), None)
+    if not job:
+        raise HTTPException(status_code=404, detail="no such job")
+    r = await _aio.to_thread(execute, job)
+    await _aio.to_thread(_log_run, jid, r["ok"], r["note"])
+    await hub.push()
+    return r
+
+@app.delete("/schedules/{jid}")
+async def sched_delete(jid: int, _=Depends(need_auth)):
+    try:
+        from app.schedules import remove
+    except ImportError:
+        from schedules import remove
+    r = remove(jid)
+    await hub.push()
+    return r
+
+@app.get("/schedules/{jid}/runs")
+def sched_runs(jid: int, _=Depends(need_auth)):
+    try:
+        from app.schedules import runs
+    except ImportError:
+        from schedules import runs
+    return {"runs": runs(jid)}
+
+# ---- v0.4: sandbox gates + reputation ----
+@app.get("/sandbox/perms")
+def sandbox_perms(_=Depends(need_auth)):
+    try:
+        from app.sandbox import KNOWN_PERMS
+    except ImportError:
+        from sandbox import KNOWN_PERMS
+    return {"perms": [{"perm": k, "risk": v} for k, v in KNOWN_PERMS.items()]}
+
+@app.get("/sandbox/grants/{skill}")
+def sandbox_grants(skill: str, _=Depends(need_auth)):
+    try:
+        from app.sandbox import grants_for
+    except ImportError:
+        from sandbox import grants_for
+    return {"skill": skill, "grants": grants_for(skill)}
+
+@app.post("/sandbox/check")
+def sandbox_check(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.sandbox import check
+    except ImportError:
+        from sandbox import check
+    return {"skill": payload.get("skill", ""), "perm": payload.get("perm", ""),
+            "allowed": check(payload.get("skill", ""), payload.get("perm", ""))}
+
+@app.post("/marketplace/rate")
+async def market_rate(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.sandbox import rate
+    except ImportError:
+        from sandbox import rate
+    return rate(payload.get("name", ""), payload.get("user", "me"), int(payload.get("stars", 5)))
+
+@app.get("/marketplace/reputation/{skill}")
+def market_rep(skill: str, _=Depends(need_auth)):
+    try:
+        from app.sandbox import reputation
+    except ImportError:
+        from sandbox import reputation
+    return reputation(skill)
+
+# ---- v0.4: team roles, budgets, per-seat spend ----
+@app.post("/teams/{tid}/role")
+async def team_role(tid: int, payload: dict, _=Depends(need_auth)):
+    try:
+        from app.teams import set_role
+    except ImportError:
+        from teams import set_role
+    r = set_role(tid, payload.get("admin", "me"), payload.get("user", ""), payload.get("role", "member"))
+    if not r.get("ok"):
+        raise HTTPException(status_code=403, detail=r.get("error", "denied"))
+    await hub.push()
+    return r
+
+@app.post("/teams/{tid}/budget")
+async def team_budget(tid: int, payload: dict, _=Depends(need_auth)):
+    try:
+        from app.teams import set_budget
+    except ImportError:
+        from teams import set_budget
+    r = set_budget(tid, payload.get("admin", "me"), float(payload.get("cap_usd", 0)))
+    if not r.get("ok"):
+        raise HTTPException(status_code=403, detail=r.get("error", "denied"))
+    await hub.push()
+    return r
+
+@app.get("/teams/{tid}/spend")
+def team_spend(tid: int, _=Depends(need_auth)):
+    try:
+        from app.teams import spend
+    except ImportError:
+        from teams import spend
+    return spend(tid)
+
+# ---- v0.4: E2E relay-lite (sealed envelopes) ----
+@app.post("/relay/push")
+async def relay_push(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.relay import seal
+    except ImportError:
+        from relay import seal
+    if not payload.get("device") or "payload" not in payload:
+        raise HTTPException(status_code=400, detail="device + payload required")
+    return seal(payload["device"], payload["payload"])
+
+@app.get("/relay/pull")
+def relay_pull(device: str, _=Depends(need_auth)):
+    try:
+        from app.relay import pull
+    except ImportError:
+        from relay import pull
+    return {"envelopes": pull(device)}
+
+# ---- v0.4: voice sessions (chunked audio -> transcribe -> command) ----
+_voice_sessions: dict = {}
+
+@app.post("/voice/session/start")
+async def voice_sess_start(payload: dict = None, _=Depends(need_auth)):
+    import uuid as _u
+    sid = _u.uuid4().hex[:12]
+    _voice_sessions[sid] = {"chunks": [], "ts": time.time()}
+    return {"ok": True, "session": sid}
+
+@app.post("/voice/session/chunk")
+async def voice_sess_chunk(payload: dict, _=Depends(need_auth)):
+    import base64 as _b64
+    sid = payload.get("session", "")
+    s = _voice_sessions.get(sid)
+    if not s:
+        raise HTTPException(status_code=404, detail="no such session")
+    try:
+        s["chunks"].append(_b64.b64decode(payload.get("audio_b64", "")))
+    except Exception:
+        raise HTTPException(status_code=400, detail="bad audio_b64")
+    if sum(len(c) for c in s["chunks"]) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="audio too large (20MB max)")
+    s["ts"] = time.time()
+    return {"ok": True, "bytes": sum(len(c) for c in s["chunks"])}
+
+@app.post("/voice/session/finish")
+async def voice_sess_finish(payload: dict, _=Depends(need_auth)):
+    import httpx as _hx
+    sid = payload.get("session", "")
+    s = _voice_sessions.pop(sid, None)
+    if not s or not s["chunks"]:
+        raise HTTPException(status_code=404, detail="no such session or empty")
+    key = os.getenv("GROQ_API_KEY", "") or os.getenv("GROK_API_KEY", "")
+    if not key.startswith("gsk_"):
+        raise HTTPException(status_code=422, detail="voice needs a Groq (gsk_) key")
+    data = b"".join(s["chunks"])
+    r = _hx.post("https://api.groq.com/openai/v1/audio/transcriptions",
+                 headers={"Authorization": f"Bearer {key}"},
+                 files={"file": ("voice.m4a", data)},
+                 data={"model": "whisper-large-v3-turbo"}, timeout=120)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"transcribe failed: {r.text[:200]}")
+    text = r.json().get("text", "")
+    return {"ok": True, "text": text,
+            "command": {"hint": "POST this text to /voice/command", "text": text}}
 
 # ---- research + agent builder ----
 @app.post("/research")
