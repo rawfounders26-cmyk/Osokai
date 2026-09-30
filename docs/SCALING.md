@@ -1,5 +1,14 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## hardening round — ✅ DONE (no new features; strength only)
+- [x] **Recurring-bill double-post fixed**: `last_post` update never committed (split-connection bug) — scheduler reposted every 30s. Single-connection fix + idempotency eval.
+- [x] **Shared DB helper** (`app/db.py`): WAL mode + 5s busy timeout + FK pragmas across all 26 modules. Real DB confirmed on WAL.
+- [x] **Thread-safe memory**: shared connection + scheduler/chat threads were silently losing writes (12/20 in test). RLock around all memory writes; concurrency eval now 20/20.
+- [x] **Secrets audit**: no .env/.db/keys tracked; no hardcoded tokens in code.
+- [x] **Deep health**: `/health` now reports db writability, free disk MB, version.
+- [x] **Input clamps**: list limits and recall bounded server-side.
+- [x] **Hardening evals**: concurrency smoke, malformed-input battery (12 fail-soft paths), recurring idempotency.
+
 ## v0.6 — ✅ DONE (shipped, verified, pushed to main)
 - [x] **Plugin sandbox runtime**: allow-listed pack actions, perm-gated via grant ledger (default-deny), workspace file jail, network off unless `net.fetch` granted, per-call audit, per-pack kill-switch. Verified live: unknown action, jail escape, net-off, kill/revive, 4-row audit.
 - [x] **Cross-device handoff**: goal snapshot (title/progress/next task) relayed sealed, single-accept with expiry + wrong-device rejection, resume nudge on accept. Verified live: create → pending → accept → re-accept 409.
@@ -50,5 +59,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 51 nightly evals gating every release — reliability story.
+- 54 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

@@ -17,6 +17,10 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 TTL = 7 * 86400
 
@@ -29,7 +33,7 @@ def _key() -> bytes:
 
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("""CREATE TABLE IF NOT EXISTS relay_inbox(
         id INTEGER PRIMARY KEY, device TEXT, envelope TEXT, ts REAL, delivered INTEGER DEFAULT 0)""")
     return db

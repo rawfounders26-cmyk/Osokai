@@ -11,10 +11,14 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("""CREATE TABLE IF NOT EXISTS cal_events(
         id INTEGER PRIMARY KEY, title TEXT, day TEXT, time TEXT,
         ts REAL, note TEXT, done INTEGER DEFAULT 0)""")

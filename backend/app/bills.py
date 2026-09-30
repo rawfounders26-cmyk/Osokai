@@ -7,10 +7,14 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("CREATE TABLE IF NOT EXISTS bill_groups(id INTEGER PRIMARY KEY, name TEXT, created REAL)")
     db.execute("CREATE TABLE IF NOT EXISTS bill_members(id INTEGER PRIMARY KEY, gid INTEGER, name TEXT)")
     try:
@@ -206,8 +210,10 @@ def post_due_recurring() -> dict:
             e = add_expense(r["gid"], f"{r['title']} ({today.strftime('%b %Y')})",
                             r["amount"], r["paid_by"], r["splits"])
             if e.get("ok"):
-                _db().execute("UPDATE bill_recurring SET last_post=? WHERE id=?",
-                              (today.strftime("%Y-%m"), r["id"])).commit()
+                _dbm = _db()
+                _dbm.execute("UPDATE bill_recurring SET last_post=? WHERE id=?",
+                             (today.strftime("%Y-%m"), r["id"]))
+                _dbm.commit()
                 posted.append(r["title"])
     return {"ok": True, "posted": posted}
 

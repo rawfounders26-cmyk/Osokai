@@ -516,3 +516,74 @@ def test_slm_fetch_rejects_garbage():
     import slm
     assert slm.fetch_weights("not-a-url")["ok"] is False
     assert slm.fetch_weights("https://example.com/nonexistent-xyz.gguf")["ok"] is False
+
+# ---- hardening evals: concurrency, malformed inputs, recurring idempotency ----
+
+def test_concurrent_writes_hold(tmp_path, monkeypatch):
+    import threading
+    import memory
+    import bills
+    import proactive
+    monkeypatch.setattr(memory, "DB", str(tmp_path / "c.db"))
+    monkeypatch.setattr(bills, "DB", str(tmp_path / "c2.db"))
+    monkeypatch.setattr(proactive, "DB", str(tmp_path / "c3.db"))
+    errs = []
+    m = memory.Memory()
+
+    def work(i):
+        try:
+            m.add("user", f"msg {i}")
+            bills.create_group(f"g{i}", ["Me"])
+            proactive.nudge("t", f"k{i}", f"text {i}")
+        except Exception as e:  # noqa: BLE001
+            errs.append(e)
+
+    ts = [threading.Thread(target=work, args=(i,)) for i in range(20)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert not errs
+    assert m.db.execute("SELECT COUNT(*) FROM turns").fetchone()[0] == 20
+
+
+def test_malformed_inputs_fail_soft(tmp_path, monkeypatch):
+    import bills
+    import wardrobe
+    import e2e
+    import wake
+    import share
+    import sqlite3
+    monkeypatch.setattr(bills, "DB", str(tmp_path / "m.db"))
+    monkeypatch.setattr(wardrobe, "DB", str(tmp_path / "m2.db"))
+    assert bills.add_expense(999999, "x", 10, "Me", {})["ok"] is False
+    assert bills.house_ledger(1, "not-a-month")["ok"] is False
+    assert bills.parse_receipt("!!!not-base64!!!")["ok"] is False
+    wardrobe.add_item("shirt", "blue")
+    assert wardrobe.pack_trip(0)["ok"] is True  # clamped to 1 day, never crashes
+    assert wardrobe.intake_image("!!!")["ok"] is False
+    assert e2e.push_envelope("d", {"v": 1})["ok"] is False
+    try:
+        e2e.open_envelope("bad", {"v": 2})
+        assert False
+    except Exception:
+        pass
+    assert wake.vad(b"") == {"speech": False, "energy": 0.0}
+    assert wake.stream_chunk("nope", "")["ok"] is False
+    db = sqlite3.connect(str(tmp_path / "s2.db"))
+    db.execute("CREATE TABLE share_links(token TEXT PRIMARY KEY, kind TEXT, ref INT, exp REAL, revoked INT DEFAULT 0, ts REAL)")
+    monkeypatch.setattr(share, "_ldb", lambda: db)
+    assert share.create_link("goal", 1, ttl_hours=-1)["ok"] is True
+    import time as _t
+    r = share.resolve_link(share.create_link("goal", 1, ttl_hours=-1)["token"])
+    assert r is None  # already expired
+
+
+def test_recurring_no_double_post(tmp_path, monkeypatch):
+    import bills
+    monkeypatch.setattr(bills, "DB", str(tmp_path / "r.db"))
+    g = bills.create_group("flat", ["Me", "A"])["id"]
+    bills.add_recurring(g, "Rent", 9000, "Me", {}, 1)
+    first = bills.post_due_recurring()
+    second = bills.post_due_recurring()
+    assert len(first["posted"]) == 1 and second["posted"] == []  # last_post persists
+    n = bills._db().execute("SELECT COUNT(*) FROM bill_expenses WHERE gid=?", (g,)).fetchone()[0]
+    assert n == 1

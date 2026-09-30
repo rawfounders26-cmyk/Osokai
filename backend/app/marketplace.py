@@ -19,6 +19,10 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 BASE = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "skills"))
 ROLES = os.path.join(BASE, "roles")
 MARKET = os.path.join(BASE, "market")
@@ -26,7 +30,7 @@ DB = _pdata("osokai.db")
 
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("""CREATE TABLE IF NOT EXISTS market_installed(
         name TEXT PRIMARY KEY, version TEXT, ts REAL, enabled INTEGER DEFAULT 1)""")
     return db

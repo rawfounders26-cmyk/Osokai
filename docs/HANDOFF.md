@@ -4,12 +4,11 @@
 > until merchant-services building starts. Conversations are RAM; this file is disk.
 
 ## Where we are
-- **Version**: v0.6.0. **Tests**: 51/51 green.
-- **Last shipped**: v0.6 platform — plugin sandbox runtime (allow-list, perm gates, file jail,
-  net-off, audit, kill-switch), cross-device handoff (sealed snapshots, single-accept, resume nudges),
-  SLM weights drop-in (URL fetch, GGUF verify, auto traffic flip). All live-verified, probe data cleaned.
-- **Before that**: v0.5 (E2E keys, SLM slot, wake/streaming, optimizer, share links, release gate, digests) ·
-  v0.4.x (outfit + bills chat-driven, mobile screens, cloud pack) · v0.4 · v0.3 · v0.2.
+- **Version**: v0.6.0 + hardening round. **Tests**: 54/54 green.
+- **Last shipped**: hardening (no features) — recurring double-post fix, shared WAL DB helper,
+  thread-safe memory, secrets audit clean, deep health, input clamps, 3 hardening evals.
+- **Before that**: v0.6 platform · v0.5 · v0.4.x (outfit + bills, mobile screens, cloud pack) ·
+  v0.4 · v0.3 · v0.2.
 - **Repo**: `github.com/rawfounders26-cmyk/Osokai`, branch `main`.
 
 ## What's paused / what's next
@@ -62,8 +61,9 @@
 #    cross-device handoff, SLM weights drop-in, merchant-services Phase 1.
 
 ## Session log
-- 2026-09-30: v0.6 platform shipped + pushed (51 tests: sandbox runtime, handoff, SLM fetch) →
-  HANDOFF + SCALING updated. Next: user picks v0.7 or merchant Phase 1.
+- 2026-09-30: hardening round shipped + pushed (54 tests: recurring fix, WAL helper, memory locks,
+  secrets audit, deep health, clamps). Agent strengthened, zero new features.
+- 2026-09-30: v0.6 platform shipped + pushed (51 tests) → HANDOFF + SCALING updated.
 - 2026-09-30: v0.5 shipped + pushed (48 tests) → HANDOFF + SCALING updated.
 - 2026-09-30 (earlier): v0.4.x shipped + pushed (40 tests) → cloud pack shipped + pushed (42 tests) →
   merchant-services strategy discussion (no code) → HANDOFF.md created.

@@ -15,12 +15,16 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 MAX_AUTO_STEPS = 25  # safety cap per goal per day
 
 
 def _db():
-    return sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    return _hardb(os.path.normpath(DB))
 
 
 def _steps_today(gid: int) -> int:

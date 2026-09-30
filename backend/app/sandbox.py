@@ -15,6 +15,10 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 
 KNOWN_PERMS = {
@@ -27,7 +31,7 @@ MIN_REP_WARN = 2.5
 
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("CREATE TABLE IF NOT EXISTS perm_grants(skill TEXT, perm TEXT, ts REAL, PRIMARY KEY(skill, perm))")
     db.execute("""CREATE TABLE IF NOT EXISTS perm_audit(
         id INTEGER PRIMARY KEY, skill TEXT, perm TEXT, allowed INT, ts REAL)""")

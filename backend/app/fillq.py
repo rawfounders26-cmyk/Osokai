@@ -10,10 +10,14 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("""CREATE TABLE IF NOT EXISTS fill_requests(
         id INTEGER PRIMARY KEY, site TEXT, fields TEXT, status TEXT,
         otp TEXT DEFAULT '', created REAL, updated REAL)""")

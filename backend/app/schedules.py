@@ -17,13 +17,17 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 KINDS = ("goal_step", "briefing", "research_sweep", "nudge_scan", "bills_recurring", "settle_reminder",
          "research_digest")
 
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("""CREATE TABLE IF NOT EXISTS schedules(
         id INTEGER PRIMARY KEY, name TEXT, kind TEXT, args TEXT,
         at_time TEXT DEFAULT '', every_min INT DEFAULT 0,

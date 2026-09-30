@@ -9,6 +9,10 @@ try:
 except ImportError:
     from paths import data as _pdata, ws as _pws
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 WS = _pws()
 
@@ -16,7 +20,7 @@ TEXT_EXTS = (".md", ".txt", ".py", ".js", ".json", ".csv", ".html")
 
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("CREATE TABLE IF NOT EXISTS rag_docs(path TEXT PRIMARY KEY, mtime REAL)")
     db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS rag_fts USING fts5(path, chunk)")
     return db

@@ -15,12 +15,16 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 STALE_AFTER = 600
 
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("CREATE TABLE IF NOT EXISTS devices(device TEXT PRIMARY KEY, last_seen REAL, meta TEXT)")
     db.execute("""CREATE TABLE IF NOT EXISTS outbox(
         id INTEGER PRIMARY KEY, device TEXT, kind TEXT, payload TEXT, ts REAL, delivered INTEGER DEFAULT 0)""")

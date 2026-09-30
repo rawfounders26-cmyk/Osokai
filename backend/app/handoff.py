@@ -15,12 +15,16 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 TTL = 24 * 3600
 
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("""CREATE TABLE IF NOT EXISTS handoffs(
         id INTEGER PRIMARY KEY, gid INT, title TEXT, progress INT, next_task TEXT,
         from_device TEXT, to_device TEXT, status TEXT DEFAULT 'open', ts REAL, exp REAL)""")

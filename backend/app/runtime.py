@@ -16,6 +16,10 @@ try:
 except ImportError:
     from paths import data as _pdata, ws as _pws
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 WS = _pws()
 
@@ -36,7 +40,7 @@ MAX_WRITE_BYTES = 200_000
 
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("""CREATE TABLE IF NOT EXISTS runtime_audit(
         id INTEGER PRIMARY KEY, skill TEXT, action TEXT, target TEXT,
         allowed INT, ms INT, ts REAL)""")

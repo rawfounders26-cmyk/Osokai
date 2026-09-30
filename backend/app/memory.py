@@ -8,13 +8,21 @@ try:
 except ImportError:
     from paths import data as _pdata, ws as _pws
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 WS = _pws()
+
+# single shared connection + scheduler/proactive/chat threads -> guard all writes
+import threading as _th
+_lock = _th.RLock()
 
 class Memory:
     def __init__(self):
         os.makedirs(WS, exist_ok=True)
-        self.db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+        self.db = _hardb(os.path.normpath(DB))
         self.db.execute("CREATE TABLE IF NOT EXISTS turns(role TEXT, text TEXT, ts REAL)")
         self.db.execute("""CREATE TABLE IF NOT EXISTS approvals(
             id INTEGER PRIMARY KEY, message TEXT, device TEXT, status TEXT,
@@ -25,8 +33,9 @@ class Memory:
         self.db.execute("CREATE TABLE IF NOT EXISTS summary(id INTEGER PRIMARY KEY CHECK(id=1), text TEXT, updated REAL)")
 
     def add(self, role, text):
-        self.db.execute("INSERT INTO turns VALUES(?,?,?)", (role, text, time.time()))
-        self.db.commit()
+        with _lock:
+            self.db.execute("INSERT INTO turns VALUES(?,?,?)", (role, text, time.time()))
+            self.db.commit()
         try:
             n = self.db.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
             if n % 50 == 0:
@@ -36,10 +45,11 @@ class Memory:
 
     # ---- episodic memory: durable facts, salience-ranked recall ----
     def note_fact(self, fact: str, salience: float = 1.0):
-        cur = self.db.execute("INSERT INTO facts(fact, salience, ts) VALUES(?,?,?)",
-                              (fact[:1000], max(0.1, min(5.0, salience)), time.time()))
-        self.db.commit()
-        return cur.lastrowid
+        with _lock:
+            cur = self.db.execute("INSERT INTO facts(fact, salience, ts) VALUES(?,?,?)",
+                                  (fact[:1000], max(0.1, min(5.0, salience)), time.time()))
+            self.db.commit()
+            return cur.lastrowid
 
     def recall(self, query: str = "", k: int = 5):
         terms = [t for t in query.lower().split() if len(t) > 2]
@@ -76,16 +86,18 @@ class Memory:
         if not text:
             users = [r[1][:160] for r in rows if r[0] == "user"][:5]
             text = "Recent threads: " + " | ".join(users)
-        self.db.execute("INSERT OR REPLACE INTO summary(id, text, updated) VALUES(1,?,?)", (text, time.time()))
-        self.db.commit()
+        with _lock:
+            self.db.execute("INSERT OR REPLACE INTO summary(id, text, updated) VALUES(1,?,?)", (text, time.time()))
+            self.db.commit()
 
     # ---- durable approvals: survive backend restarts (unlike in-memory dicts) ----
     def approval_create(self, message, device, kind="general", item=""):
-        cur = self.db.execute(
-            "INSERT INTO approvals(message, device, status, kind, item, ts, reply) VALUES(?,?,?,?,?,?,?)",
-            (message, device, "pending", kind, item, time.time(), ""))
-        self.db.commit()
-        return cur.lastrowid
+        with _lock:
+            cur = self.db.execute(
+                "INSERT INTO approvals(message, device, status, kind, item, ts, reply) VALUES(?,?,?,?,?,?,?)",
+                (message, device, "pending", kind, item, time.time(), ""))
+            self.db.commit()
+            return cur.lastrowid
 
     def approval_get(self, aid):
         r = self.db.execute("SELECT id, message, device, status, kind, item, ts, reply FROM approvals WHERE id=?",
@@ -97,9 +109,10 @@ class Memory:
         return [self._arow(r) for r in rows]
 
     def approval_resolve(self, aid, allow, reply):
-        self.db.execute("UPDATE approvals SET status=?, reply=? WHERE id=? AND status='pending'",
-                        ("allowed" if allow else "denied", reply, aid))
-        self.db.commit()
+        with _lock:
+            self.db.execute("UPDATE approvals SET status=?, reply=? WHERE id=? AND status='pending'",
+                            ("allowed" if allow else "denied", reply, aid))
+            self.db.commit()
         return self.approval_get(aid)
 
     @staticmethod

@@ -151,8 +151,25 @@ def need_auth(request: Request, authorization: str = Header(default="")):
 
 @app.get("/health")
 def health():
+    db_ok, disk_mb = True, -1
+    try:
+        mem.db.execute("SELECT 1").fetchone()
+    except Exception:
+        db_ok = False
+    try:
+        import shutil as _sh
+        from app.paths import data as _pd
+        disk_mb = round(_sh.disk_usage(os.path.dirname(_pd("x")) or ".").free / 1024 / 1024)
+    except Exception:
+        try:
+            import shutil as _sh2
+            from paths import data as _pd2
+            disk_mb = round(_sh2.disk_usage(os.path.dirname(_pd2("x")) or ".").free / 1024 / 1024)
+        except Exception:
+            pass
     return {"ok": True, "service": "Osok-AI", "supabase": bool(os.getenv("SUPABASE_URL", "").startswith("http")),
-            "auth": bool(os.getenv("OSOKAI_AUTH_TOKEN", ""))}
+            "auth": bool(os.getenv("OSOKAI_AUTH_TOKEN", "")), "db": db_ok, "disk_free_mb": disk_mb,
+            "version": OSOKAI_VERSION}
 
 @app.post("/system/open")
 async def system_open(payload: dict, _=Depends(need_auth)):
@@ -918,7 +935,7 @@ async def memory_fact(payload: dict, _=Depends(need_auth)):
 
 @app.get("/memory/recall")
 def memory_recall(q: str = "", k: int = 5, _=Depends(need_auth)):
-    return {"facts": mem.recall(q, k), "summary": mem.get_summary()}
+    return {"facts": mem.recall(q[:200], max(1, min(20, k))), "summary": mem.get_summary()}
 
 # ---- device presence + offline outbox ----
 @app.post("/devices/heartbeat")
@@ -1196,7 +1213,7 @@ def sched_runs(jid: int, _=Depends(need_auth)):
         from app.schedules import runs
     except ImportError:
         from schedules import runs
-    return {"runs": runs(jid)}
+    return {"runs": runs(jid, 50)}
 
 # ---- v0.4: sandbox gates + reputation ----
 @app.get("/sandbox/perms")
@@ -1541,7 +1558,7 @@ def digest_latest(limit: int = 10, _=Depends(need_auth)):
         from app.digest import latest
     except ImportError:
         from digest import latest
-    return {"digests": latest(limit)}
+    return {"digests": latest(max(1, min(100, limit)))}
 
 # ---- v0.6: plugin sandbox runtime ----
 @app.post("/sandbox/run")
@@ -1560,7 +1577,7 @@ def sandbox_audit(skill: str = "", limit: int = 30, _=Depends(need_auth)):
         from app.runtime import audit
     except ImportError:
         from runtime import audit
-    return {"audit": audit(skill, limit)}
+    return {"audit": audit(skill, max(1, min(200, limit)))}
 
 @app.post("/sandbox/kill")
 async def sandbox_kill(payload: dict, _=Depends(need_auth)):

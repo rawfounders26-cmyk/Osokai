@@ -6,10 +6,14 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("""CREATE TABLE IF NOT EXISTS wardrobe(
         id INTEGER PRIMARY KEY, category TEXT, color TEXT, season TEXT,
         formality TEXT, last_worn REAL DEFAULT 0, wears INTEGER DEFAULT 0)""")

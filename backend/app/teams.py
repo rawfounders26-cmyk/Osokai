@@ -14,11 +14,15 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("CREATE TABLE IF NOT EXISTS teams(id INTEGER PRIMARY KEY, name TEXT, ts REAL)")
     db.execute("""CREATE TABLE IF NOT EXISTS team_members(
         team INT, user TEXT, role TEXT, ts REAL, PRIMARY KEY(team, user))""")

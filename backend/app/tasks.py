@@ -7,10 +7,14 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("""CREATE TABLE IF NOT EXISTS task_runs(
         id INTEGER PRIMARY KEY, title TEXT, kind TEXT, status TEXT,
         progress INTEGER DEFAULT 0, result TEXT DEFAULT '', steps TEXT DEFAULT '[]',

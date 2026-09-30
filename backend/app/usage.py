@@ -13,13 +13,17 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 # rough blended $/1k tokens for the small models Osok-AI uses (override via env)
 PRICE_PER_1K = float(os.getenv("OSOKAI_PRICE_PER_1K", "0.0004"))
 
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("""CREATE TABLE IF NOT EXISTS usage_log(
         id INTEGER PRIMARY KEY, task TEXT, model TEXT, tokens INT, ms INT, ts REAL)""")
     try:

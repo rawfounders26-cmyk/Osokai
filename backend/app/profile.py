@@ -9,12 +9,16 @@ try:
 except ImportError:
     from paths import data as _pdata
 
+try:
+    from app.db import connect as _hardb
+except ImportError:
+    from db import connect as _hardb
 DB = _pdata("osokai.db")
 
 PROFILE_KEYS = ("name", "city", "upi_id", "budget_default", "currency")
 
 def _db():
-    db = sqlite3.connect(os.path.normpath(DB), check_same_thread=False)
+    db = _hardb(os.path.normpath(DB))
     db.execute("CREATE TABLE IF NOT EXISTS profile(key TEXT PRIMARY KEY, value TEXT, updated REAL)")
     db.execute("""CREATE TABLE IF NOT EXISTS prefs(
         id INTEGER PRIMARY KEY, domain TEXT, pref TEXT, ts REAL)""")
