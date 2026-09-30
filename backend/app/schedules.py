@@ -131,7 +131,8 @@ def execute(job: dict) -> dict:
             except ImportError:
                 from research import deep_research
             fp = deep_research(args.get("topic", ""), min(2, int(args.get("depth", 1))))
-            return {"ok": True, "note": f"sweep saved: {fp}"}
+            import os as _os
+            return {"ok": True, "note": f"sweep saved: {_os.path.basename(fp)}"}
         if kind == "nudge_scan":
             try:
                 from app.proactive import _tick

@@ -70,7 +70,8 @@ def run_digest(topic: str) -> dict:
         return {"ok": False, "note": f"no research engine: {e}"}
     try:
         fp = deep_research(topic, 1)
-        body = f"Digest on '{topic}' compiled: {fp}"
+        short = os.path.basename(fp)  # never leak absolute server paths to clients
+        body = f"Digest on '{topic}' compiled: {short}"
         db = _db()
         db.execute("INSERT INTO digests(topic, body, ts) VALUES(?,?,?)", (topic, body[:2000], time.time()))
         db.commit()

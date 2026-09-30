@@ -4,7 +4,7 @@
 > until merchant-services building starts. Conversations are RAM; this file is disk.
 
 ## Where we are
-- **Version**: v0.6.0 + hardening round. **Tests**: 54/54 green.
+- **Version**: v0.6.0 + hardening + hygiene. **Tests**: 55/55 green.
 - **Last shipped**: hardening (no features) — recurring double-post fix, shared WAL DB helper,
   thread-safe memory, secrets audit clean, deep health, input clamps, 3 hardening evals.
 - **Before that**: v0.6 platform · v0.5 · v0.4.x (outfit + bills, mobile screens, cloud pack) ·
@@ -61,6 +61,8 @@
 #    cross-device handoff, SLM weights drop-in, merchant-services Phase 1.
 
 ## Session log
+- 2026-09-30: nudge-hygiene fix from screenshot (basename paths, orphan goal/handoff filter,
+  2-line home alerts) + stale probe cleanup → 55 tests.
 - 2026-09-30: hardening round shipped + pushed (54 tests: recurring fix, WAL helper, memory locks,
   secrets audit, deep health, clamps). Agent strengthened, zero new features.
 - 2026-09-30: v0.6 platform shipped + pushed (51 tests) → HANDOFF + SCALING updated.

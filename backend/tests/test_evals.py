@@ -587,3 +587,22 @@ def test_recurring_no_double_post(tmp_path, monkeypatch):
     assert len(first["posted"]) == 1 and second["posted"] == []  # last_post persists
     n = bills._db().execute("SELECT COUNT(*) FROM bill_expenses WHERE gid=?", (g,)).fetchone()[0]
     assert n == 1
+
+# ---- nudge hygiene evals: no path leaks, no orphan refs ----
+
+def test_nudge_orphans_and_paths(tmp_path, monkeypatch):
+    import proactive
+    import goaltrees
+    monkeypatch.setattr(proactive, "DB", str(tmp_path / "n.db"))
+    monkeypatch.setattr(goaltrees, "DB", str(tmp_path / "n2.db"))
+    try:
+        import app.goaltrees as _ag
+        monkeypatch.setattr(_ag, "DB", str(tmp_path / "n2.db"))
+    except ImportError:
+        pass
+    proactive.nudge("goal_stalled", "goal:424242", "Goal X hasn''t moved")
+    proactive.nudge("loop_due", "loop:9", "Reminder due: call mom")
+    shown = proactive.list_nudges()
+    assert all(n["key"] != "goal:424242" for n in shown)  # deleted goal filtered
+    assert any(n["key"] == "loop:9" for n in shown)  # unrelated kinds untouched
+    assert "C:\\\\" not in (shown[0]["text"] if shown else "") and ":\\\\" not in "".join(n["text"] for n in shown)

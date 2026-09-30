@@ -59,7 +59,7 @@ export default function DashboardScreen() {
       <Text style={s.hello}>Welcome back</Text>
       {!!spend && <Text style={s.spend}>{spend}</Text>}
       {alerts.map((a, i) => (
-        <Text key={i} style={s.bell}>{a}</Text>
+        <Text key={i} style={s.bell} numberOfLines={2} ellipsizeMode="tail">{a}</Text>
       ))}
       <ScrollView
         contentContainerStyle={s.grid}

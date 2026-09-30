@@ -45,6 +45,23 @@ def nudge(kind: str, key: str, text: str) -> bool:
     return True
 
 
+def _ref_alive(kind: str, key: str) -> bool:
+    """Orphan hygiene: nudges pointing at deleted goals/handoffs never reach clients."""
+    try:
+        if kind == "goal_stalled" and key.startswith("goal:"):
+            try:
+                from app import goaltrees as _gt
+            except ImportError:
+                import goaltrees as _gt
+            return _gt.get_tree(int(key.split(":")[1])) is not None
+        if kind == "handoff" and key.startswith("handoff:"):
+            db = _db()
+            return db.execute("SELECT 1 FROM handoffs WHERE id=?", (int(key.split(":")[1]),)).fetchone() is not None
+    except Exception:
+        return True
+    return True
+
+
 def list_nudges(unseen_only: bool = True, limit: int = 30):
     db = _db()
     q = "SELECT id, kind, key, text, ts, seen FROM nudges"
@@ -53,7 +70,7 @@ def list_nudges(unseen_only: bool = True, limit: int = 30):
     q += " ORDER BY ts DESC LIMIT ?"
     rows = db.execute(q, (limit,)).fetchall()
     return [{"id": r[0], "kind": r[1], "key": r[2], "text": r[3], "ts": r[4], "seen": bool(r[5])}
-            for r in rows]
+            for r in rows if _ref_alive(r[1], r[2])]
 
 
 def mark_seen(nid: int = 0):

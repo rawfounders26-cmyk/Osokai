@@ -7,7 +7,7 @@
 - [x] **Secrets audit**: no .env/.db/keys tracked; no hardcoded tokens in code.
 - [x] **Deep health**: `/health` now reports db writability, free disk MB, version.
 - [x] **Input clamps**: list limits and recall bounded server-side.
-- [x] **Hardening evals**: concurrency smoke, malformed-input battery (12 fail-soft paths), recurring idempotency.
+- [x] **Hardening evals**: concurrency smoke, malformed-input battery (12 fail-soft paths), recurring idempotency, nudge hygiene (orphan refs filtered, no path leaks).
 
 ## v0.6 — ✅ DONE (shipped, verified, pushed to main)
 - [x] **Plugin sandbox runtime**: allow-listed pack actions, perm-gated via grant ledger (default-deny), workspace file jail, network off unless `net.fetch` granted, per-call audit, per-pack kill-switch. Verified live: unknown action, jail escape, net-off, kill/revive, 4-row audit.
@@ -59,5 +59,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 54 nightly evals gating every release — reliability story.
+- 55 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.
