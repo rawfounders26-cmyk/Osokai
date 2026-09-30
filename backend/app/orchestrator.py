@@ -86,6 +86,15 @@ def auto_step(gid: int, device: str = "orchestrator") -> dict:
         return {"ok": False, "error": f"no goal engine: {e}"}
     if _steps_today(gid) >= MAX_AUTO_STEPS:
         return {"ok": False, "error": "daily auto-step cap reached — human check-in needed"}
+    try:
+        try:
+            from app.usage import budget_ok
+        except ImportError:
+            from usage import budget_ok
+        if not budget_ok():
+            return {"ok": False, "error": "monthly AI budget reached — raise the cap to continue autonomous work"}
+    except Exception:
+        pass
     tree = _gt.get_tree(gid)
     if not tree:
         return {"ok": False, "error": "goal not found"}

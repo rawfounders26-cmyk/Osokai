@@ -1,0 +1,10 @@
+{
+  "name": "pdf-summarizer",
+  "version": "1.0.0",
+  "description": "Summarize workspace PDFs into 5-bullet briefs with page references.",
+  "perms": [
+    "files.read"
+  ],
+  "sha256": "1c9551f8be58dd0c4645e9b2e9202e055eea8ccee1caee67c62a5431748cc5a2",
+  "sig": "c9b20078e212036935e9a46a27e5316b469a73e8844ef827b92e99a85015fdab"
+}

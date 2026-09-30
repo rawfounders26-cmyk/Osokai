@@ -3,7 +3,7 @@ import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
-import { billGroups, notifications, pendingApprovals, loopsDue } from '../services/api';import { colors, radius, spacing } from '../services/theme';
+import { billGroups, notifications, pendingApprovals, loopsDue, nudges, usageSummary } from '../services/api';import { colors, radius, spacing } from '../services/theme';
 
 const CARDS = [
   { id: 'bills', title: 'Bill Split', emoji: '🧾', bg: '#0ea5a4', route: '/bill' },
@@ -16,6 +16,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const [due, setDue] = useState('');
   const [alerts, setAlerts] = useState([]);
+  const [spend, setSpend] = useState('');
   const [ref, setRef] = useState(false);
 
   const load = useCallback(async () => {
@@ -39,7 +40,15 @@ export default function DashboardScreen() {
       if (p.length) items.push(`⏳ ${p.length} approval(s) waiting`);
       const due = await loopsDue();
       if (due.length) items.push(`🔁 ${due.length} loop(s) due`);
-      setAlerts(items.slice(0, 5));
+      try {
+        const nz = await nudges();
+        nz.slice(0, 3).forEach(n => items.push(`🔔 ${n.text}`));
+      } catch {}
+      try {
+        const u = await usageSummary();
+        if (u.month_spent_usd) setSpend(`🤖 AI spend $${u.month_spent_usd} this month`);
+      } catch {}
+      setAlerts(items.slice(0, 6));
     } catch { setAlerts([]); }
     setRef(false);
   }, []);
@@ -48,6 +57,7 @@ export default function DashboardScreen() {
   return (
     <View style={[s.wrap, { paddingTop: insets.top }]}>
       <Text style={s.hello}>Welcome back</Text>
+      {!!spend && <Text style={s.spend}>{spend}</Text>}
       {alerts.map((a, i) => (
         <Text key={i} style={s.bell}>{a}</Text>
       ))}
@@ -72,6 +82,7 @@ const s = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.bg },
   hello: { fontSize: 20, fontWeight: '800', color: colors.text, padding: spacing.lg },
   bell: { color: colors.warning, fontSize: 13, paddingHorizontal: spacing.lg, marginBottom: 4 },
+  spend: { color: colors.text, opacity: 0.7, fontSize: 12, paddingHorizontal: spacing.lg, marginBottom: 6 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', padding: spacing.md, gap: 12 },
   card: { width: '47%', borderRadius: radius.lg, padding: 16, minHeight: 150, justifyContent: 'flex-end' },
   emoji: { fontSize: 30, marginBottom: 8 },

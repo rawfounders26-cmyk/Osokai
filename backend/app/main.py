@@ -43,7 +43,7 @@ app = FastAPI(title="Osok-AI API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 mem = Memory()
 
-OSOKAI_VERSION = "0.2.0"
+OSOKAI_VERSION = "0.3.0"
 
 # ---- reliability: request ids + per-IP rate limiting (abuse shield) ----
 import uuid as _uuid
@@ -413,6 +413,17 @@ async def chat(body: ChatIn, _=Depends(need_auth)):
             mem.add("Osok-AI", "OTP saved — the extension will fill it.")
             await hub.push()
             return {"reply": "OTP saved — the extension will fill it.", "approval_required": False, "action": "otp"}
+    # local-first fast lane: trivial answers never cost tokens or latency
+    try:
+        from app.local import try_answer as _local_ans
+    except ImportError:
+        from local import try_answer as _local_ans
+    _loc = _local_ans(body.message)
+    if _loc:
+        mem.add("user", body.message)
+        mem.add("Osok-AI", _loc)
+        await hub.push()
+        return {"reply": _loc, "approval_required": False, "action": "local"}
     # loops capture first: "remind me to pay X" is a reminder, not a payment
     _pre, _ = intent_parse(body.message)
     if _pre and _pre.get("type") in ("loop_add", "loop_done"):
@@ -882,6 +893,196 @@ def devices_list(_=Depends(need_auth)):
 @app.get("/updates/latest")
 def updates_latest():
     return {"version": OSOKAI_VERSION, "notes": "See GitHub releases for changelog."}
+
+# ---- usage + cost dashboard ----
+@app.get("/usage/summary")
+def usage_summary(days: int = 30, _=Depends(need_auth)):
+    try:
+        from app.usage import summary
+    except ImportError:
+        from usage import summary
+    return summary(days)
+
+@app.post("/usage/budget")
+async def usage_budget(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.usage import set_budget
+    except ImportError:
+        from usage import set_budget
+    r = set_budget(float(payload.get("monthly_cap_usd", 0)))
+    await hub.push()
+    return r
+
+# ---- skill marketplace: signed community packs ----
+@app.get("/marketplace")
+def market_list(_=Depends(need_auth)):
+    try:
+        from app.marketplace import list_market
+    except ImportError:
+        from marketplace import list_market
+    return {"packs": list_market()}
+
+@app.post("/marketplace/install")
+async def market_install(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.marketplace import install
+    except ImportError:
+        from marketplace import install
+    r = install(payload.get("name", ""))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "install failed"))
+    await hub.push()
+    return r
+
+@app.post("/marketplace/enable")
+async def market_enable(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.marketplace import set_enabled
+    except ImportError:
+        from marketplace import set_enabled
+    r = set_enabled(payload.get("name", ""), bool(payload.get("enabled", True)))
+    await hub.push()
+    return r
+
+@app.post("/marketplace/uninstall")
+async def market_uninstall(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.marketplace import uninstall
+    except ImportError:
+        from marketplace import uninstall
+    r = uninstall(payload.get("name", ""))
+    await hub.push()
+    return r
+
+# ---- team mode: shared goals + multi-user approvals ----
+@app.post("/teams")
+async def team_create(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.teams import create_team
+    except ImportError:
+        from teams import create_team
+    r = create_team(payload.get("name", "team"), payload.get("owner", "me"))
+    await hub.push()
+    return r
+
+@app.get("/teams")
+def teams_list(_=Depends(need_auth)):
+    try:
+        from app.teams import list_teams
+    except ImportError:
+        from teams import list_teams
+    return {"teams": list_teams()}
+
+@app.post("/teams/{tid}/members")
+async def team_add(tid: int, payload: dict, _=Depends(need_auth)):
+    try:
+        from app.teams import add_member
+    except ImportError:
+        from teams import add_member
+    r = add_member(tid, payload.get("user", ""), payload.get("role", "member"))
+    if not r.get("ok"):
+        raise HTTPException(status_code=404, detail=r.get("error", "no such team"))
+    await hub.push()
+    return r
+
+@app.post("/teams/{tid}/share-goal")
+async def team_share(tid: int, payload: dict, _=Depends(need_auth)):
+    try:
+        from app.teams import share_goal
+    except ImportError:
+        from teams import share_goal
+    r = share_goal(int(payload.get("gid", 0)), tid)
+    if not r.get("ok"):
+        raise HTTPException(status_code=404, detail=r.get("error", "no such team"))
+    await hub.push()
+    return r
+
+@app.get("/teams/{tid}/goals")
+def team_goals_list(tid: int, _=Depends(need_auth)):
+    try:
+        from app.teams import team_goals
+    except ImportError:
+        from teams import team_goals
+    return {"goals": team_goals(tid)}
+
+@app.post("/teams/{tid}/ask")
+async def team_ask(tid: int, payload: dict, _=Depends(need_auth)):
+    try:
+        from app.teams import ask_team
+    except ImportError:
+        from teams import ask_team
+    r = ask_team(tid, payload.get("message", ""), payload.get("kind", "general"), payload.get("item", ""))
+    await hub.push()
+    return r
+
+@app.get("/teams/{tid}/pending")
+def team_pending_list(tid: int, _=Depends(need_auth)):
+    try:
+        from app.teams import team_pending
+    except ImportError:
+        from teams import team_pending
+    return {"pending": team_pending(tid)}
+
+@app.post("/teams/approvals/{aid}/resolve")
+async def team_resolve(aid: int, payload: dict, _=Depends(need_auth)):
+    try:
+        from app.teams import team_resolve
+    except ImportError:
+        from teams import team_resolve
+    r = team_resolve(aid, payload.get("user", "me"), bool(payload.get("allow", False)))
+    await hub.push()
+    return r
+
+# ---- voice loop: one-call command + spoken reply ----
+@app.post("/voice/command")
+async def voice_command(payload: dict, _=Depends(need_auth)):
+    """Voice-optimized chat: same brain, short spoken-style replies."""
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text required")
+    try:
+        from app.local import try_answer as _local_ans
+    except ImportError:
+        from local import try_answer as _local_ans
+    loc = _local_ans(text)
+    if loc:
+        return {"reply": loc, "action": "local", "speak": True}
+    try:
+        from app.intents import parse as _parse, execute as _run
+        from app.system_tools import sanitize_reply as _san
+    except ImportError:
+        from intents import parse as _parse, execute as _run
+        from system_tools import sanitize_reply as _san
+    pre, _ = _parse(text)
+    if pre and pre.get("type") not in ("loop_add", "loop_done"):
+        mem.add("user", "[voice] " + text)
+        reply = _san(_run(pre, payload.get("device", "voice")))
+        mem.add("Osok-AI", reply)
+        await hub.push()
+        return {"reply": reply, "action": pre.get("type"), "speak": True}
+    reply = chat_with_grok("Reply in ONE short spoken sentence, no lists: " + text)
+    mem.add("user", "[voice] " + text)
+    mem.add("Osok-AI", reply)
+    await hub.push()
+    return {"reply": reply, "action": "chat", "speak": True}
+
+@app.post("/voice/speak")
+def voice_speak(payload: dict, _=Depends(need_auth)):
+    """Speak text aloud on the host. Needs `pip install pyttsx3` (Windows SAPI)."""
+    text = (payload.get("text") or "")[:500]
+    if not text:
+        raise HTTPException(status_code=400, detail="text required")
+    try:
+        import pyttsx3 as _tts
+    except ImportError:
+        return {"ok": False, "error": "TTS not installed — run: pip install pyttsx3"}
+    try:
+        eng = _tts.init()
+        eng.say(text)
+        eng.runAndWait()
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": f"TTS failed: {e}"}
 
 # ---- research + agent builder ----
 @app.post("/research")

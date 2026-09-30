@@ -16,6 +16,8 @@ def chat_with_grok(message: str) -> str:
         return "[osokai-stub] Set GROQ_API_KEY in backend/.env, then restart. Got: " + message[:120]
     # gsk_ = Groq Cloud, otherwise xAI
     url = "https://api.groq.com/openai/v1/chat/completions" if key.startswith("gsk_") else "https://api.x.ai/v1/chat/completions"
+    import time as _t
+    t0 = _t.time()
     try:
         r = _client.post(
             url,
@@ -28,6 +30,15 @@ def chat_with_grok(message: str) -> str:
             from app.system_tools import sanitize_reply
         except ImportError:
             from system_tools import sanitize_reply
-        return sanitize_reply(r.json()["choices"][0]["message"]["content"])
+        reply = sanitize_reply(r.json()["choices"][0]["message"]["content"])
+        try:
+            try:
+                from app.usage import log as _ulog
+            except ImportError:
+                from usage import log as _ulog
+            _ulog("chat", model, message, reply, int((_t.time() - t0) * 1000))
+        except Exception:
+            pass
+        return reply
     except Exception as e:
         return f"[osok-ai-error] LLM call failed: {e}"

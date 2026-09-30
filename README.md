@@ -27,7 +27,15 @@ npm run dist-mac  # .dmg (run on Mac)
 - mobile: `flutter run --dart-define=API_BASE_URL=http://<PC-LAN-IP>:8765`
 - extension: load unpacked `extension/`, backend must be running.
 
-## v0.2 scale-up
+## v0.3 scale-up
+- Usage/cost dashboard (`/usage/summary`, `/usage/budget`) · skill marketplace (`/marketplace`)
+- Team mode (`/teams/*`) · local fast lane (zero-token answers) · voice loop (`/voice/command`, `/voice/speak`)
+- Mobile dashboard: nudges + AI spend · orchestrator respects budget caps
+
+## v0.2 scale-up (kept)
+- Usage/cost dashboard (`/usage/summary`, `/usage/budget`) · skill marketplace (`/marketplace`)
+- Team mode (`/teams/*`) · local fast lane (zero-token answers) · voice loop (`/voice/command`, `/voice/speak`)
+- Mobile dashboard: nudges + AI spend · orchestrator respects budget caps
 - Proactive engine (nudges, 8am briefing) · orchestrator auto-steps (`POST /goaltrees/{id}/auto-step`)
 - Memory 2.0 facts/recall · hybrid RAG with citations (`POST /rag/answer`)
 - Rate limits + request ids · device presence + offline outbox · Docker + CI

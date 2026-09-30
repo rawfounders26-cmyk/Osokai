@@ -1,0 +1,10 @@
+{
+  "name": "habit-tracker",
+  "version": "1.0.0",
+  "description": "Daily habit streaks with streak counts and weekly review prompts.",
+  "perms": [
+    "loops.write"
+  ],
+  "sha256": "0dee8d1dfa6198c4708e43f6ef0ef1efb1bae1f3a53ab0fe7c65bfe52ecb03a7",
+  "sig": "c3c4eb67e5fae6bfe0e69a7fcbe1a10ae62649fe2e6ae19f82aa02c019e19184"
+}

@@ -133,3 +133,62 @@ def test_presence_offline_queue(tmp_path, monkeypatch):
     first = presence.pending("phone")
     assert len(first) == 1 and first[0]["payload"]["text"] == "hi"
     assert presence.pending("phone") == []  # delivered once
+
+# ---- v0.3 scale-up evals: fast lane, usage, marketplace, teams, voice ----
+
+def test_local_fast_lane():
+    from local import try_answer
+    assert "2026" in try_answer("what is todays date") or "September" in try_answer("date")
+    assert try_answer("what is 12 * 8 + 4") == "12 * 8 + 4 = 100"
+    assert try_answer("convert 10 km to mi") == "10 km = 6.214 mi"
+    assert try_answer("ping") == "Online and local-first. All systems nominal."
+    assert try_answer("what time is it").startswith("It's ")
+    assert try_answer("what is the time").startswith("It's ")
+    assert try_answer("help me plan a startup raising funds") is None  # escalates
+    assert try_answer("open youtube and play something") is None
+
+
+def test_usage_logging_and_budget(tmp_path, monkeypatch):
+    import usage
+    monkeypatch.setattr(usage, "DB", str(tmp_path / "u.db"))
+    usage.log("chat", "test-model", "hello", "hi there", 12)
+    usage.log("research", "test-model", "x" * 100000, "y" * 20000, 500)
+    s = usage.summary(30)
+    assert s["months"] and s["months"][0]["calls"] >= 1 and s["by_task"]
+    assert usage.get_budget() == 0.0 and usage.budget_ok() is True
+    usage.set_budget(0.0001)
+    assert usage.budget_ok() is False  # cap enforced for autonomy
+
+
+def test_marketplace_verify_install(tmp_path, monkeypatch):
+    import hashlib
+    import json
+    import marketplace
+    monkeypatch.setenv("OSOKAI_AUTH_TOKEN", "test-key")
+    monkeypatch.setattr(marketplace, "MARKET", str(tmp_path / "mkt"))
+    monkeypatch.setattr(marketplace, "ROLES", str(tmp_path / "roles"))
+    monkeypatch.setattr(marketplace, "DB", str(tmp_path / "m.db"))
+    d = tmp_path / "mkt" / "demo"
+    d.mkdir(parents=True)
+    body = b"# Demo\nDo things.\n"
+    (d / "SKILL.md").write_bytes(body)
+    (d / "manifest.json").write_text(json.dumps({
+        "name": "demo", "version": "1.0", "description": "d", "perms": [],
+        "sha256": hashlib.sha256(body).hexdigest(), "sig": marketplace.sign_pack(body)}))
+    assert marketplace.verify("demo")["ok"]
+    assert marketplace.install("demo")["ok"]
+    (d / "SKILL.md").write_bytes(body + b"evil")
+    assert marketplace.verify("demo")["ok"] is False  # tamper detected
+
+
+def test_teams_flow(tmp_path, monkeypatch):
+    import teams
+    monkeypatch.setattr(teams, "DB", str(tmp_path / "t.db"))
+    t = teams.create_team("founders", owner="ceo")
+    assert teams.add_member(t["id"], "cto")["ok"]
+    assert len(teams.list_teams()[0]["members"]) == 2
+    a = teams.ask_team(t["id"], "spend $50 on domain?", kind="payment")
+    assert teams.team_pending(t["id"])[0]["id"] == a["id"]
+    r = teams.team_resolve(a["id"], "cto", True)
+    assert r["approval"]["status"] == "allowed" and r["approval"]["by"] == "cto"
+    assert teams.team_pending(t["id"]) == []

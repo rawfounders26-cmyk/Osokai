@@ -358,6 +358,28 @@ export const vaultPolicy = (key, policy, domains) =>
 export const vaultTotp = (key, domain = '') =>
   vault('/vault/totp', { method: 'POST', body: JSON.stringify({ key, domain }) });
 
+// v0.2/v0.3 scale-up surfaces
+async function get(path) {
+  const [base, hdrs] = await Promise.all([baseUrl(), headers()]);
+  const res = await fetch(`${base}${path}`, { headers: hdrs });
+  if (!res.ok) await throwDetail(res, `HTTP ${res.status}`);
+  return res.json();
+}
+async function post(path, body = {}) {
+  const [base, hdrs] = await Promise.all([baseUrl(), headers()]);
+  const res = await fetch(`${base}${path}`, { method: 'POST', headers: hdrs, body: JSON.stringify(body) });
+  if (!res.ok) await throwDetail(res, `HTTP ${res.status}`);
+  return res.json();
+}
+
+export const nudges = () => get('/nudges').then(j => j.nudges || []);
+export const nudgesSeen = () => post('/nudges/seen', {});
+export const usageSummary = () => get('/usage/summary?days=30');
+export const marketList = () => get('/marketplace').then(j => j.packs || []);
+export const marketInstall = (name) => post('/marketplace/install', { name });
+export const teamsList = () => get('/teams').then(j => j.teams || []);
+export const voiceCommand = (text) => post('/voice/command', { text, device: 'mobile-app' });
+export const goalAutoStep = (gid) => post(`/goaltrees/${gid}/auto-step`, { device: 'mobile-app' });
 // live sync: one socket per app session, backoff reconnect, heartbeat-safe
 let syncSock = null;
 let syncDelay = 5000;
