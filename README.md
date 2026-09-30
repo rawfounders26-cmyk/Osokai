@@ -1,0 +1,28 @@
+# Osok-AI
+Local-first Muse-type agent. See PRD.md.
+
+## Wiring
+All UIs -> `http://127.0.0.1:8765` (API_BASE_URL):
+- desktop (Electron, Alt+Space), mobile (Flutter 5 tabs), extension (MV3)
+
+## Run backend
+```
+cd backend
+copy .env.example .env  # paste GROK_API_KEY + SUPABASE_URL + SUPABASE_ANON_KEY
+pip install -r requirements.txt
+uvicorn app.main:app --port 8765
+# test: curl http://localhost:8765/health
+```
+
+## Desktop
+```
+cd desktop
+npm install
+npm start  # Alt+Space toggles Command Port
+npm run dist-win  # .exe
+npm run dist-mac  # .dmg (run on Mac)
+```
+
+## Mobile / Extension
+- mobile: `flutter run --dart-define=API_BASE_URL=http://<PC-LAN-IP>:8765`
+- extension: load unpacked `extension/`, backend must be running.

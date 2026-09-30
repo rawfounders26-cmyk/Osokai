@@ -1,0 +1,11 @@
+{
+  "registry": "skillmd.com",
+  "slug": "omer-metin/cybersecurity",
+  "detail": {
+    "title": "cybersecurity",
+    "description": "Security engineering that protects applications, data, and users from real-world threatsUse when \"security, authentication, authorization, encryption, OWASP, vulnerability, XSS, SQL injection, CSRF, secrets, password, JWT, OAuth, permissions, audit, compliance, security, authentication, authorization, encryption, vulnerabilities, OWASP, compliance, audit\" mentioned.",
+    "avg_rating": 4.5,
+    "rating": null,
+    "license": null
+  }
+}

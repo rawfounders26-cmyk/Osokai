@@ -1,0 +1,42 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  * { box-sizing: border-box; }
+  body { width: 320px; margin: 0; padding: 16px; background: #101014; color: #e8e8ee; font-family: system-ui; }
+  #appr { text-align: center; color: #8a8a96; font-size: 13px; padding: 6px 0 12px; }
+  #appr.has { color: #fff; }
+  .alist { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+  .aitem { background: #1b1b22; border-radius: 8px; padding: 8px; font-size: 12px; }
+  .aitem .m { margin-bottom: 6px; word-break: break-word; }
+  .aitem .row { display: flex; gap: 6px; }
+  .aitem button { flex: 1; padding: 6px; border-radius: 6px; border: 0; cursor: pointer; font-size: 12px; }
+  .allow { background: #22c55e; color: #fff; } .deny { background: #3a3a44; color: #fff; }
+  hr { border: 0; border-top: 1px solid #2a2a33; margin: 4px 0 12px; }
+  .conn { color: #e8e8ee; font-size: 13px; margin-bottom: 4px; cursor: pointer; }
+  .conn::before { content: '▾ '; font-size: 11px; }
+  label { display: block; font-size: 12px; color: #b9b9c4; margin: 10px 0 5px; }
+  input { width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid #2c2c36; background: #1b1b22; color: #fff; font-size: 12px; outline: none; }
+  #save { margin-top: 12px; width: 130px; padding: 9px; border-radius: 8px; border: 0; background: #5b5bd6; color: #fff; font-size: 13px; cursor: pointer; }
+  #go { margin-top: 12px; width: 100%; padding: 9px; border-radius: 8px; border: 0; background: #26262e; color: #fff; font-size: 13px; cursor: pointer; }
+  #saveloop { margin-top: 8px; width: 100%; padding: 9px; border-radius: 8px; border: 0; background: #26262e; color: #fff; font-size: 13px; cursor: pointer; }
+  #filllogin, #filltotp { margin-top: 8px; width: 100%; padding: 9px; border-radius: 8px; border: 0; background: #26262e; color: #fff; font-size: 13px; cursor: pointer; }
+  .fill { background: #5b5bd6 !important; color: #fff !important; }
+  #o { font-size: 12px; margin-top: 8px; white-space: pre-wrap; color: #cfcfe0; }
+</style></head><body>
+<div id="appr">No pending approvals.</div>
+<div class="alist" id="alist"></div>
+<hr>
+<div class="conn">Connection</div>
+<label>Backend URL</label>
+<input id="base" placeholder="http://127.0.0.1:8000">
+<label>Device ID</label>
+<input id="dev" placeholder="laptop-chrome">
+<label>Auth token</label>
+<input id="tok" type="password" placeholder="API_AUTH_TOKEN">
+<button id="save">Save &amp; reconnect</button>
+<button id="go">Summarize this tab</button>
+<button id="saveloop">Save page → loop</button>
+<button id="filllogin">Autofill login on this page</button>
+<button id="filltotp">Fill TOTP code</button>
+<div id="lockrow" style="display:flex;gap:6px;align-items:center;margin-top:8px"><span id="lockstate" style="font-size:12px">vault ?</span><button id="lockbtn">Lock / Unlock</button></div>
+<div id="pklist" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"></div>
+<div id="o"></div>
+<script src="popup.js"></script></body></html>

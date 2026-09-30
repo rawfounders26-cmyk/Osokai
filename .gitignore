@@ -1,0 +1,12 @@
+backend/.env
+backend/vault.json
+backend/vault_secrets.json
+backend/vault_key.dpapi
+backend/osokai.db
+backend/porter_local.db
+__pycache__/
+node_modules/
+dist/
+.env
+
+vendor/

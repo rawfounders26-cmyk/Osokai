@@ -1,0 +1,11 @@
+[
+ {
+  "slug": "bill-watcher",
+  "name": "bill watcher",
+  "purpose": "nudge on overdue debts",
+  "tools": [
+   "bill_balances"
+  ],
+  "ts": 1790685709.8267283
+ }
+]

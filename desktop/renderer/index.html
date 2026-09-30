@@ -1,0 +1,91 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; font-family: system-ui; }
+  body::-webkit-scrollbar, div::-webkit-scrollbar { display: none; width: 0; }
+  #shell { background: transparent; height: 100vh; overflow: hidden; position: relative; color: #fff; }
+  /* floating traffic lights, top-left */
+  #drag { -webkit-app-region: drag; height: 26px; display: flex; align-items: center; padding: 0 10px; gap: 7px; }
+  .tl { -webkit-app-region: no-drag; width: 12px; height: 12px; border-radius: 50%; border: 0; cursor: pointer; padding: 0; }
+  #btn-close { background: #ff5f57; } #btn-min { background: #febc2e; }
+  /* floating input pill */
+  .bar { display: flex; gap: 8px; align-items: center; padding: 4px 12px 6px; }
+  #q { -webkit-app-region: no-drag; flex: 1; padding: 11px 14px; border-radius: 12px; border: 0; font-size: 14px; outline: none; background: #fff; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+  .iconbtn { -webkit-app-region: no-drag; width: 42px; height: 42px; border-radius: 10px; border: 0; cursor: pointer; font-size: 19px; line-height: 1; background: #fff; color: #111; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+  #dots { font-size: 20px; color: #ff8c42; }
+  /* vertical icon-only dropdown, right side */
+  #dots-panel { -webkit-app-region: no-drag; display: none; position: absolute; top: 82px; right: 14px; flex-direction: column; gap: 10px; z-index: 10; align-items: center; }
+  #dots-panel.open { display: flex; }
+  #dots-panel button.conn { width: 44px; height: 44px; border-radius: 50%; border: 2px solid #888; cursor: pointer; background: #fff; padding: 8px; line-height: 1; box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+  #dots-panel button.conn img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #dots-panel button.conn.on { border-color: #22c55e; }
+  #more, #gear { width: 44px; height: 44px; border-radius: 50%; border: 2px dashed #ccc; background: rgba(30,30,35,.85); color: #fff; font-size: 20px; cursor: pointer; padding: 0; line-height: 1; }
+  #gear { border-style: solid; font-size: 22px; }
+  /* settings card */
+  #settings { -webkit-app-region: no-drag; display: none; position: absolute; top: 82px; left: 12px; right: 70px; background: #fff; color: #111; border-radius: 12px; padding: 12px; z-index: 20; box-shadow: 0 8px 30px rgba(0,0,0,.5); max-height: 360px; overflow: hidden; }
+  #settings.open { display: block; }
+  #settings h4 { margin: 0 0 8px; font-size: 14px; }
+  #settings .srow { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
+  #settings .srow img { width: 22px; height: 22px; object-fit: contain; }
+  #settings .srow input { flex: 1; padding: 7px 9px; border-radius: 7px; border: 1px solid #ccc; font-size: 12px; }
+  #settings .srow button { padding: 7px 10px; border-radius: 7px; border: 0; cursor: pointer; font-size: 12px; background: #111; color: #fff; }
+  #settings .api { font-size: 11px; color: #555; margin-top: 4px; }
+  #out { padding: 2px 16px 10px; font-size: 13px; max-height: 60px; overflow: hidden; white-space: pre-wrap; text-shadow: 0 1px 6px rgba(0,0,0,.9); }
+  /* mini observer pill — shown when minimized, draggable anywhere */
+  #mini { display: none; -webkit-app-region: drag; width: 100%; height: 100vh; align-items: center; justify-content: center; }
+  body.mini #drag, body.mini .bar, body.mini #dots-panel, body.mini #settings, body.mini #out { display: none !important; }
+  body.mini #mini { display: flex; }
+  #mini-pill { -webkit-app-region: drag; background: rgba(15,15,20,.92); border-radius: 22px; padding: 12px 0; display: flex; flex-direction: column; gap: 12px; align-items: center; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
+  /* flush-merged shapes: square corners on the side sunk into the screen edge */
+  body.mini.dock-right #mini-pill { border-radius: 22px 0 0 22px; box-shadow: -4px 0 16px rgba(0,0,0,.5); }
+  body.mini.dock-left #mini-pill { border-radius: 0 22px 22px 0; box-shadow: 4px 0 16px rgba(0,0,0,.5); }
+  body.mini.dock-top #mini-pill { border-radius: 0 0 22px 22px; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  body.mini.dock-bottom #mini-pill { border-radius: 22px 22px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,.5); }
+  #mini-pill button { -webkit-app-region: no-drag; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; background: transparent; padding: 2px; position: relative; }
+  #mini-pill button svg, #mini-pill button img { width: 100%; height: 100%; display: block; }
+  #agentBtn img { border-radius: 50%; transition: transform .25s ease; }
+  #agentBtn:hover img { transform: rotate(-8deg) scale(1.1); }
+  #bellBtn.alert svg path { fill: #ff3b30; }
+  #bellCount { display: none; position: absolute; top: 0; right: 0; background: #ff3b30; color: #fff; font-size: 10px; font-weight: bold; min-width: 17px; height: 17px; line-height: 17px; text-align: center; border-radius: 9px; padding: 0 4px; }
+  #bellBtn.alert #bellCount { display: block; }
+</style></head><body>
+<div id="shell">
+  <div id="drag">
+    <button class="tl" id="btn-close" title="Close"></button>
+    <button class="tl" id="btn-min" title="Minimize"></button>
+  </div>
+  <div class="bar">
+    <input id="q" placeholder="Ask Osok-AI... (Alt+Space)">
+    <button class="iconbtn" id="send" title="Send">➤</button>
+    <button class="iconbtn" id="shot" title="Screenshot">📷</button>
+    <button class="iconbtn" id="dots" title="Connectors">⋮</button>
+  </div>
+  <div id="dots-panel">
+    <button class="conn" data-c="gmail" title="Gmail"><img src="icons/gmail.svg" alt="Gmail"></button>
+    <button class="conn" data-c="outlook" title="Outlook"><img src="icons/outlook.svg" alt="Outlook"></button>
+    <button class="conn" data-c="whatsapp" title="WhatsApp"><img src="icons/whatsapp.svg" alt="WhatsApp"></button>
+    <button class="conn" data-c="discord" title="Discord"><img src="icons/discord.svg" alt="Discord"></button>
+    <button class="conn" data-c="slack" title="Slack"><img src="icons/slack.svg" alt="Slack"></button>
+    <button id="more" title="Add more">＋</button>
+    <button id="gear" title="Settings">⚙</button>
+  </div>
+  <div id="settings">
+    <h4>⚙ Settings — one Backend URL + Auth Token syncs everything</h4>
+    <div class="srow"><input id="set-base" placeholder="Backend URL, e.g. http://localhost:8765"></div>
+    <div class="srow"><input id="set-token" type="password" placeholder="Osok-AI auth token (from backend/.env)"><button id="set-save">Connect</button></div>
+    <div class="srow"><span id="lockstate" style="font-size:12px">vault: ?</span><button id="lockbtn">Lock / Unlock</button></div>
+    <div id="settings-rows"></div>
+    <h4>🔐 Secrets — policy + allowed domains</h4>
+    <div id="vault-rows"></div>
+    <h4>📜 Access log</h4>
+    <div id="audit-rows" style="font-size:11px;max-height:110px;overflow:hidden"></div>
+    <div class="api" id="settings-api"></div>
+  </div>
+  <div id="out"></div>
+  <div id="mini">
+    <div id="mini-pill">
+      <button id="agentBtn" title="Osok-AI — click to expand"><img src="icons/osokai.svg" alt="Osok-AI"></button>
+      <button id="bellBtn" title="Notifications"><svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.1-1.6-5.6-4.5-6.3V4c0-.8-.7-1.5-1.5-1.5S10.5 3.2 10.5 4v.7C7.6 5.4 6 7.9 6 11v5l-2 2v1h16v-1l-2-2z" fill="#9a9aa5"/></svg><span id="bellCount">0</span></button>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script></body></html>

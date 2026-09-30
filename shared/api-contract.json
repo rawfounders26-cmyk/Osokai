@@ -1,0 +1,1 @@
+{"openapi": "osokai-v1", "baseUrl": "http://127.0.0.1:8765", "routes": ["/health", "/auth-check", "/chat", "/approvals", "/tasks", "/files", "/connectors", "/inbox", "/notifications", "/ws/sync"]}
