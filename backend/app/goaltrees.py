@@ -143,17 +143,11 @@ def compile_goal(title: str):
     """LLM compiles any goal into the 4-level tree. Falls back to a research outline."""
     try:
         from app.grok_client import chat_with_grok
+        from app.planner_pack import compile_prompt
     except ImportError:
         from grok_client import chat_with_grok
-    prompt = ("Decompose this goal into JSON ONLY, no other text. Shape: "
-              '{"objectives": [{"title": "...", "projects": [{"title": "...", "tasks": '
-              '[{"title": "...", "kind": "research|create|browse|approval|human|wait", '
-              '"subtasks": ["..."]}]}]}]}. '
-              "5 or fewer objectives, 2-4 tasks per project. "
-              "RULE: give a task 2-6 subtasks ONLY if it needs more than one step or touches "
-              "the outside world (calendar, email, browser, people, payments). "
-              "Atomic single actions (open a site, look something up) get NO subtasks. "
-              f"Goal: {title}")
+        from planner_pack import compile_prompt
+    prompt = compile_prompt(title)
     import json as _j
     try:
         raw = chat_with_grok(prompt)

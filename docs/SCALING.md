@@ -1,5 +1,11 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## hierarchy STEP 4 — ✅ DONE: planner pack + 60-example battery (quality compounds)
+- [x] `app/planner_pack.py`: all 60 examples as data (goal-title-weighted retrieval, few-shot `compile_prompt`, vault/approval hard rules).
+- [x] `goal-planner` skill pack: decomposition doctrine for the router.
+- [x] Wired into `compile_goal`; live-verified (family-trip compile mirrors the pack example with mixed kinds).
+- [x] Battery: pack shape (60 examples, valid kinds), sensitive-kind rules (#53 vault/human-wait, #46/#55 approval), retrieval accuracy, prompt injection.
+
 ## hierarchy STEP 3 — ✅ DONE: observe/verify/checkpoint (correctness gate)
 - [x] `app/verify.py`: `execute()` runs one validated action with evidence; `verify()` re-reads world state (file exists, event on calendar, loop open, HTTP 200, draft id); `run_verified()` retries once, then escalates.
 - [x] Orchestrator walks subtasks: propose → execute → verify → checkpoint subtask done ONLY on verify-pass; parent task completes when all subtasks verified; tasks without subtasks keep the legacy path.
@@ -77,5 +83,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 64 nightly evals gating every release — reliability story.
+- 68 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

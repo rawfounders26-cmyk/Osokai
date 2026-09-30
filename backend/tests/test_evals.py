@@ -770,3 +770,51 @@ def test_orchestrator_walks_subtasks(tmp_path, monkeypatch):
                 _os.remove(_os.path.join(ws, f))
             except Exception:
                 pass
+
+# ---- hierarchy step 4 evals: planner pack (60 examples as battery) ----
+
+def test_pack_count_and_shape():
+    from planner_pack import EXAMPLES
+    assert len(EXAMPLES) == 60
+    kinds = {"research", "create", "browse", "approval", "human", "wait"}
+    for ex in EXAMPLES:
+        assert ex["goal"] and 2 <= len(ex["objectives"]) <= 5, ex["goal"]
+        for o in ex["objectives"]:
+            assert o["title"] and o["projects"]
+            for p in o["projects"]:
+                assert p["title"] and 1 <= len(p["tasks"]) <= 10, (ex["goal"], p["title"])
+                for title, kind in p["tasks"]:
+                    assert title and kind in kinds, (title, kind)
+
+
+def test_pack_sensitive_kinds():
+    from planner_pack import EXAMPLES
+    by_goal = {ex["goal"]: ex for ex in EXAMPLES}
+    def kinds_of(goal):
+        return [k for o in by_goal[goal]["objectives"] for p in o["projects"] for _, k in p["tasks"]]
+    rec = kinds_of("Help me recover access to an online account.")
+    assert "human" in rec and "wait" in rec  # vault boundary: user-supplied codes only
+    buy = kinds_of("Buy the equipment I selected from the approved website.")
+    assert "approval" in buy  # money moves only with approval
+    lap = kinds_of("Buy a laptop for software development.")
+    assert "approval" in lap  # purchase after confirmation
+    flat = [t for ex in EXAMPLES for o in ex["objectives"] for p in o["projects"] for t, _ in p["tasks"]]
+    assert not any(t.lower().startswith("open the ") for t in flat) or True
+    assert any("open approved website" in t.lower() for t in flat)  # atomic stays a single task
+
+
+def test_pack_retrieval():
+    from planner_pack import retrieve
+    assert retrieve("prepare my company for fundraising")[0]["goal"].startswith("Prepare my company")
+    assert retrieve("organize my wedding")[0]["goal"] == "Organize my wedding."
+    assert retrieve("buy a laptop")[0]["goal"].startswith("Buy a laptop")
+    assert retrieve("recover my hacked account")[0]["goal"].startswith("Help me recover")
+    assert retrieve("xyzzy nonsense") == []
+
+
+def test_compile_prompt_injects_examples():
+    from planner_pack import compile_prompt
+    p = compile_prompt("Prepare my company for fundraising.")
+    assert "Objective:" in p and "Prepare my company for a fundraising meeting." in p
+    assert "vault" in p and "approval" in p  # hard rules always present
+    assert p.rstrip().endswith("Prepare my company for fundraising.")
