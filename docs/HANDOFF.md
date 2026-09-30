@@ -4,7 +4,7 @@
 > until merchant-services building starts. Conversations are RAM; this file is disk.
 
 ## Where we are
-- **Version**: v0.6.0 + hardening + hygiene. **Tests**: 55/55 green.
+- **Version**: v0.6.0 + hardening + hygiene + hierarchy steps 1–2. **Tests**: 61/61 green.
 - **Last shipped**: hardening (no features) — recurring double-post fix, shared WAL DB helper,
   thread-safe memory, secrets audit clean, deep health, input clamps, 3 hardening evals.
 - **Before that**: v0.6 platform · v0.5 · v0.4.x (outfit + bills, mobile screens, cloud pack) ·
@@ -61,6 +61,8 @@
 #    cross-device handoff, SLM weights drop-in, merchant-services Phase 1.
 
 ## Session log
+- 2026-09-30: hierarchy STEP 2 shipped (action registry, validate, propose, 3 evals) → 61 tests.
+  Next: step 3 observe/verify/checkpoint.
 - 2026-09-30: hierarchy STEP 1 shipped (subtask table, insert/get/set, compile rule, 3 evals,
   live chat compile verified with 16 subtasks) → 58 tests. Next: step 2 (action registry).
   Constraints locked: chat-only entry, no new screens, additive wiring.

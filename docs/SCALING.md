@@ -1,5 +1,11 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## hierarchy STEP 2 — ✅ DONE: action registry + validation (contract only, no execution yet)
+- [x] `app/actions.py`: 12-action closed registry (args, types, effects, approval flags).
+- [x] `validate()`: unknown actions rejected, required-arg/type checks, workspace jail, http(s) URLs, sensitive actions flagged for approval.
+- [x] `propose()`: deterministic subtask → candidate actions (calendar/email/search/open/create/remind/vault), human/approval kinds map to ask/notify, safe default never empty.
+- [x] Next: step 3 observe/verify/checkpoint (execution + correctness gate).
+
 ## hierarchy STEP 1 — ✅ DONE: subtask level (structure only, chat entry unchanged)
 - [x] `subtasks` table + insert/get/set, `get_tree()` nests subtasks per task, progress math untouched.
 - [x] Compile rule: 2–6 subtasks only for multi-step/outside-world tasks, atomic actions stay flat, hard cap 6.
@@ -65,5 +71,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 58 nightly evals gating every release — reliability story.
+- 61 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

@@ -652,3 +652,46 @@ def test_old_trees_render_with_empty_subtasks(tmp_path, monkeypatch):
         for p in o["projects"]:
             for task in p["tasks"]:
                 assert task["subtasks"] == []
+
+# ---- hierarchy step 2 evals: action registry + validation ----
+
+def test_actions_registry_shape():
+    import actions
+    assert len(actions.REGISTRY) >= 10
+    for name, spec in actions.REGISTRY.items():
+        assert set(spec) >= {"args", "required", "effect", "approval"}
+        assert spec["effect"] in ("read", "write", "outside", "ask")
+        for r in spec["required"]:
+            assert r in spec["args"]
+
+
+def test_actions_validate():
+    import actions
+    good = [{"action": "web_search", "args": {"query": "investors"}},
+            {"action": "create_file", "args": {"path": "notes.md", "content": "x"}}]
+    r = actions.validate(good)
+    assert r["ok"] and r["needs_approval"] is False
+    bad = [{"action": "delete_database", "args": {}},
+           {"action": "web_search", "args": {}},
+           {"action": "create_file", "args": {"path": "../../evil", "content": 123}},
+           {"action": "fetch_page", "args": {"url": "ftp://x"}}]
+    r = actions.validate(bad)
+    assert r["ok"] is False and len(r["errors"]) >= 4
+    assert actions.validate([])["ok"] is False
+    assert actions.validate("nope")["ok"] is False
+    mail = [{"action": "email_draft", "args": {"to": "a@b.c", "subject": "s", "body": "b"}}]
+    r = actions.validate(mail)
+    assert r["ok"] and r["needs_approval"] is True  # sensitive flagged
+    vault = [{"action": "vault_fill", "args": {"key": "bank"}}]
+    assert actions.validate(vault)["needs_approval"] is True  # never raw secrets
+
+
+def test_actions_propose():
+    import actions
+    assert actions.propose("Check calendar for free slots")[0]["action"] == "calendar_list"
+    assert actions.propose("Draft outreach email", "create")[0]["action"] == "email_draft"
+    assert actions.propose("Ask preferred location", "human")[0]["action"] == "ask_user"
+    assert actions.propose("Book flight", "approval")[0]["action"] == "notify_user"
+    assert actions.propose("Research investors")[0]["action"] == "web_search"
+    assert actions.propose("Create pitch deck")[0]["action"] == "create_file"
+    assert len(actions.propose("do the thing")) == 1  # safe default, never empty
