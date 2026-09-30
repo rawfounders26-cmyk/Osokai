@@ -40,7 +40,8 @@ except ImportError:
     from agent import run_goal as agent_run, is_goal as is_goal_text
 
 app = FastAPI(title="Osok-AI API")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+_cors = [o.strip() for o in os.getenv("OSOKAI_CORS", "*").split(",") if o.strip()] or ["*"]
+app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_methods=["*"], allow_headers=["*"])
 mem = Memory()
 
 OSOKAI_VERSION = "0.4.0"

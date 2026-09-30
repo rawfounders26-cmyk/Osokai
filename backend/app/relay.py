@@ -23,7 +23,8 @@ TTL = 7 * 86400
 
 def _key() -> bytes:
     from cryptography.fernet import Fernet
-    raw = hashlib.sha256((os.getenv("OSOKAI_AUTH_TOKEN", "osokai-dev") + ":relay").encode()).digest()
+    secret = os.getenv("OSOKAI_RELAY_KEY", "") or os.getenv("OSOKAI_AUTH_TOKEN", "osokai-dev")
+    raw = hashlib.sha256((secret + ":relay").encode()).digest()
     return base64.urlsafe_b64encode(raw)
 
 

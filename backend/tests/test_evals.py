@@ -332,3 +332,27 @@ def test_bills_recurring_upi_ledger(tmp_path, monkeypatch):
     assert r["ok"] and len(bills.list_recurring(g)) == 1
     h = bills.house_ledger(g)
     assert h["ok"] and h["total"] == 1000 and "flat" in h["reply"]
+
+# ---- cloud pack evals: portable paths, relay key preference ----
+
+def test_paths_env_override(tmp_path, monkeypatch):
+    import paths
+    monkeypatch.setenv("OSOKAI_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OSOKAI_WS_DIR", str(tmp_path / "ws"))
+    assert paths.data("osokai.db") == str(tmp_path / "data" / "osokai.db")
+    assert paths.ws() == str(tmp_path / "ws")
+    monkeypatch.delenv("OSOKAI_DATA_DIR")
+    assert paths.data("x").endswith("x")
+
+
+def test_relay_key_preference(tmp_path, monkeypatch):
+    import relay
+    monkeypatch.setattr(relay, "DB", str(tmp_path / "rl2.db"))
+    monkeypatch.setenv("OSOKAI_AUTH_TOKEN", "token-A")
+    monkeypatch.setenv("OSOKAI_RELAY_KEY", "relay-B")
+    k1 = relay._key()
+    monkeypatch.delenv("OSOKAI_RELAY_KEY")
+    k2 = relay._key()
+    assert k1 != k2  # dedicated relay key wins when present
+    r = relay.seal("phone", {"a": 1})
+    assert r["ok"] and relay.unseal(relay.pull("phone")[0]["envelope"]) == {"a": 1}

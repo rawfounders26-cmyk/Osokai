@@ -11,12 +11,16 @@ def base() -> str:
 
 
 def data(name: str) -> str:
-    return os.path.join(base(), name)
+    root = os.getenv("OSOKAI_DATA_DIR", "") or base()
+    os.makedirs(root, exist_ok=True)
+    return os.path.join(root, name)
 
 
 def ws() -> str:
     if getattr(sys, "frozen", False):
         p = os.path.join(base(), "workspace")
+    elif os.getenv("OSOKAI_WS_DIR"):
+        p = os.path.normpath(os.getenv("OSOKAI_WS_DIR", ""))
     else:
         p = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "workspace"))
     os.makedirs(p, exist_ok=True)

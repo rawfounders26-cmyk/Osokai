@@ -1,0 +1,28 @@
+{$DOMAIN} {
+	reverse_proxy osokai:8765
+
+	header {
+		# hardening without touching app code
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	encode gzip
+
+	# abuse shield in front of the app's own rate limits
+	rate_limit {
+		zone dynamic_api {
+			key    {remote_host}
+			window 1m
+			events 300
+		}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
