@@ -1,5 +1,10 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## policy engine — ✅ DONE: risk tiers + scope + injection guards (sentinel upgraded)
+- [x] `app/policy/` package: `risk.py` (LOW/MEDIUM/HIGH/CRITICAL with amount thresholds + reasons), `scope.py` (tool+destination+quiet-hours evaluation), `guards.py` (12 instruction-override patterns + scrub markers).
+- [x] Chat gate: policy first, injection scan, keyword sentinel as fallback. Verified live: benign→local, email→approval, injection→confirm-intent approval.
+- [x] Caught live: `\b` vs underscores (`send_email`) — scope text normalized.
+
 ## memory package — ✅ DONE: people/places/episodic/procedural + consolidation (façade untouched)
 - [x] `app/memory/` package (`memory.py` → `__init__.py`, all 72 prior tests green unmodified): people, places, episodic log + decay, routines with use-counts, unified salience+recency recall across facts/people/places/episodes.
 - [x] `consolidation.run()`: events → episodes (idempotent), 90-day decay, wake-fired prune; `memory_consolidate` scheduler kind. Verified live.
@@ -95,5 +100,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 75 nightly evals gating every release — reliability story.
+- 78 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

@@ -517,17 +517,40 @@ async def chat(body: ChatIn, _=Depends(need_auth)):
             return {"reply": "Nothing scheduled" + (f" for {day}" if day else "") + ".", "approval_required": False, "action": "calendar"}
         return {"reply": "\n".join(f"• {e['title']} — {e['day']} {e['time']}".strip() for e in evs),
                 "approval_required": False, "action": "calendar"}
-    if needs_approval(body.message):
+    # policy gate first (risk tiers + injection scan), keyword sentinel as fallback
+    try:
+        from app.policy.scope import gate_for_text as _gate
+        from app.policy.guards import scan as _scan
+    except ImportError:
+        try:
+            from policy.scope import gate_for_text as _gate
+            from policy.guards import scan as _scan
+        except ImportError:
+            _gate = _scan = None
+    _pol_gate, _inj = "auto", {"clean": True, "hits": []}
+    try:
+        if _gate:
+            _pol_gate = _gate(body.message)["gate"]
+        if _scan:
+            _inj = _scan(body.message)
+    except Exception:
+        pass
+    if _pol_gate in ("approval", "confirm") or not _inj["clean"] or needs_approval(body.message):
         try:
             from app.intents import payment_parse
         except ImportError:
             from intents import payment_parse
         pay = payment_parse(body.message) or {}
-        aid = mem.approval_create(body.message, body.device, pay.get("kind", "general"), pay.get("item", ""))
+        kind = pay.get("kind", "general")
+        item = pay.get("item", "")
+        if not _inj["clean"]:
+            kind, item = "confirm-intent", f"possible instruction override ({_inj['hits'][0][:60]})"
+        aid = mem.approval_create(body.message, body.device, kind, item)
         await hub.push()
         what = f" for “{pay['item']}”" if pay.get("item") else ""
-        return {"reply": f"Payment approval (#{aid}){what} — Approve/Reject on the extension popup or mobile chat.",
-                "approval_required": True, "approval_id": aid, "kind": pay.get("kind", "general")}
+        note = " — please confirm this is really what you want." if not _inj["clean"] else ""
+        return {"reply": f"Payment approval (#{aid}){what}{note} — Approve/Reject on the extension popup or mobile chat.",
+                "approval_required": True, "approval_id": aid, "kind": kind}
     # fast-path: device/web intents execute instantly, no LLM roundtrip
     action, _ = intent_parse(body.message)
     if action:
