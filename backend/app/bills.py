@@ -113,10 +113,39 @@ def balances(gid: int):
 
 def settle(gid: int, frm: str, to: str, amount: float):
     db = _db()
-    db.execute("INSERT INTO bill_settle(gid, frm, recipient, amount, ts) VALUES(?,?,?,?,?)",
-               (gid, frm, to, float(amount), time.time()))
+    # idempotent: exact same settlement within 60s returns the original (no double-pay)
+    dup = db.execute("SELECT id FROM bill_settle WHERE gid=? AND frm=? AND recipient=? AND amount=? AND ts>?",
+                     (gid, frm, to, float(amount), time.time() - 60)).fetchone()
+    if dup:
+        return {"ok": True, "id": dup[0], "duplicate": True}
+    cur = db.execute("INSERT INTO bill_settle(gid, frm, recipient, amount, ts) VALUES(?,?,?,?,?)",
+                     (gid, frm, to, float(amount), time.time()))
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "id": cur.lastrowid}
+
+
+def verify_ledger(gid: int) -> dict:
+    """Money invariants: splits cover each expense, debts net to ~zero, no negatives."""
+    db = _db()
+    errors = []
+    for eid, title, amount in db.execute("SELECT id, title, amount FROM bill_expenses WHERE gid=?", (gid,)):
+        if amount < 0:
+            errors.append(f"negative expense #{eid} ({title})")
+            continue
+        s = db.execute("SELECT SUM(share) FROM bill_splits WHERE eid=?", (eid,)).fetchone()[0] or 0
+        if abs(s - amount) > 0.05:
+            errors.append(f"expense #{eid} ({title}): splits ₹{s} ≠ ₹{amount}")
+        for who, share in db.execute("SELECT who, share FROM bill_splits WHERE eid=?", (eid,)):
+            if share < 0:
+                errors.append(f"negative split #{eid} for {who}")
+    b = balances(gid)
+    net = round(sum(b["net"].values()), 2)
+    if abs(net) > 0.05:
+        errors.append(f"net imbalance ₹{net} (must net to zero)")
+    for d in b["debts"]:
+        if d["amount"] <= 0:
+            errors.append(f"non-positive debt {d}")
+    return {"ok": not errors, "errors": errors, "debts": len(b["debts"])}
 
 def activity(gid: int, limit: int = 30):
     db = _db()

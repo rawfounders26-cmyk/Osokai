@@ -39,6 +39,10 @@ def mask(value: str, keep: int = 4) -> str:
     return "•" * (len(v) - keep) + v[-keep:]
 
 
+import threading as _th
+_vlock = _th.RLock()  # 10000x: concurrent fills/audits never interleave store IO
+
+
 # ---- generic secret store (cards incl. CVV, logins). Ciphertext only on disk. ----
 import json as _json
 import time as _time
@@ -65,33 +69,36 @@ def _migrate_store():
 _migrate_store()
 
 def _read_store():
-    try:
-        fp = os.path.normpath(_STORE)
-        mt = os.path.getmtime(fp)
-        if mt == _scache["mtime"]:
-            return _scache["data"]
-        data = _json.load(open(fp))
-        _scache.update(mtime=mt, data=data)
-        return data
-    except Exception:
-        return {}
+    with _vlock:
+        try:
+            fp = os.path.normpath(_STORE)
+            mt = os.path.getmtime(fp)
+            if mt == _scache["mtime"]:
+                return dict(_scache["data"])
+            data = _json.load(open(fp))
+            _scache.update(mtime=mt, data=data)
+            return dict(data)
+        except Exception:
+            return {}
 
 def _write_store(d):
-    _atomic_json(os.path.normpath(_STORE), d)
-    _scache.update(mtime=0, data=d)
+    with _vlock:
+        _atomic_json(os.path.normpath(_STORE), d)
+        _scache.update(mtime=0, data=dict(d))
 
 def secret_set(scope: str, key: str, value: str, policy: str = "while-unlocked", domains=None):
     if not key or not value:
         raise ValueError("key and value required")
     if policy not in ("always", "while-unlocked", "never"):
         policy = "while-unlocked"
-    d = _read_store()
-    prev = d.get(key, {})
-    d[key] = {"scope": scope or "general", "enc": encrypt(value),
-              "len": len(value), "updated": _time.strftime("%Y-%m-%dT%H:%M:%S"),
-              "policy": prev.get("policy", policy),
-              "domains": prev.get("domains", domains or [])}
-    _write_store(d)
+    with _vlock:  # whole read-modify-write under one hold (10000x: no lost secrets)
+        d = _read_store()
+        prev = d.get(key, {})
+        d[key] = {"scope": scope or "general", "enc": encrypt(value),
+                  "len": len(value), "updated": _time.strftime("%Y-%m-%dT%H:%M:%S"),
+                  "policy": prev.get("policy", policy),
+                  "domains": prev.get("domains", domains or [])}
+        _write_store(d)
     return {"ok": True, "key": key, "scope": d[key]["scope"], "masked": mask(value)}
 
 def secret_list():
@@ -108,16 +115,17 @@ def secret_list():
     return out
 
 def secret_policy(key: str, policy: str = "", domains=None):
-    d = _read_store()
-    if key not in d:
-        raise KeyError(f"no secret: {key}")
-    if policy:
-        if policy not in ("always", "while-unlocked", "never"):
-            raise ValueError("policy must be always|while-unlocked|never")
-        d[key]["policy"] = policy
-    if domains is not None:
-        d[key]["domains"] = [str(x).lower() for x in domains]
-    _write_store(d)
+    with _vlock:
+        d = _read_store()
+        if key not in d:
+            raise KeyError(f"no secret: {key}")
+        if policy:
+            if policy not in ("always", "while-unlocked", "never"):
+                raise ValueError("policy must be always|while-unlocked|never")
+            d[key]["policy"] = policy
+        if domains is not None:
+            d[key]["domains"] = [str(x).lower() for x in domains]
+        _write_store(d)
     e = d[key]
     return {"ok": True, "key": key, "policy": e["policy"], "domains": e["domains"]}
 
@@ -161,9 +169,10 @@ def secret_fill(key: str, domain: str = "", device: str = "?") -> str:
     return val
 
 def secret_delete(key: str):
-    d = _read_store()
-    d.pop(key, None)
-    _write_store(d)
+    with _vlock:
+        d = _read_store()
+        d.pop(key, None)
+        _write_store(d)
     return {"ok": True, "key": key}
 
 

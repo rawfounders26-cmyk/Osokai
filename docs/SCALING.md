@@ -1,5 +1,13 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## fortify round — ✅ DONE: 1000x structure + scaled features (no new screens, no duplicates)
+- [x] **Structure**: 32 hot-path indexes via `db.ensure_indexes` (every boot), month graph N+1 → single GROUP BY, shared `paths.safe_join` everywhere.
+- [x] **Sentinel scaled**: 19 precompiled patterns, microsecond scans, web/fetch outputs scanned with taint flags in verify evidence.
+- [x] **Credentials scaled**: vault RLock with whole read-modify-write critical sections (concurrency eval caught real lost writes — fixed), per-fill audit trail intact.
+- [x] **Bills scaled**: ledger invariants (splits cover expenses, net-zero, no negatives) + idempotent settle (no double-pay).
+- [x] **Outfit scaled**: 10-min weather cache (was a network call per suggest).
+- [x] Evals caught 4 real bugs mid-flight (relay quarantine vs ciphertext, placeholder content, lock scope, index coverage). All fixed pre-ship.
+
 ## learned memory — ✅ DONE: our own design (inspired by, not taken from, ai-memory-mcp)
 - [x] Multi-factor recall (`retrieval.py`): salience, keyword, recency, relationship,
   goal relevance, confirmation, source trust — with per-result factor breakdowns.
@@ -157,5 +165,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 116 nightly evals gating every release — reliability story.
+- 121 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

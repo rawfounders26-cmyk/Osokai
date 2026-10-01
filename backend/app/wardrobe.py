@@ -142,18 +142,28 @@ def feedback(item_id: int, good: bool, note: str = ""):
     db.commit()
     return {"ok": True}
 
+_wx_cache = {"ts": 0, "args": None, "data": None}
+
+
 def weather(lat: float = 13.08, lon: float = 80.27):
-    """Open-Meteo, free, no key. Defaults: Chennai."""
+    """Open-Meteo, free, no key. Defaults: Chennai. 10-min cache (1000x: every
+    suggest/list call used to hit network)."""
+    import time as _t
+    key = (round(lat, 2), round(lon, 2))
+    if _wx_cache["data"] and _wx_cache["args"] == key and _t.time() - _wx_cache["ts"] < 600:
+        return dict(_wx_cache["data"])
     import httpx
     try:
         r = httpx.get("https://api.open-meteo.com/v1/forecast",
                       params={"latitude": lat, "longitude": lon, "current": "temperature_2m,relative_humidity_2m,precipitation,weather_code"},
                       timeout=15)
         c = r.json().get("current", {})
-        return {"temp": c.get("temperature_2m"), "humidity": c.get("relative_humidity_2m"),
-                "precip": c.get("precipitation"), "code": c.get("weather_code")}
+        out = {"temp": c.get("temperature_2m"), "humidity": c.get("relative_humidity_2m"),
+               "precip": c.get("precipitation"), "code": c.get("weather_code")}
     except Exception as e:
-        return {"error": str(e)[:150]}
+        out = {"error": str(e)[:150]}
+    _wx_cache.update(ts=_t.time(), args=key, data=out)
+    return dict(out)
 
 def suggest(season_hint: str = "", formality: str = "", days_rewear: int = 0):
     """Code picks candidates (season + laundry guard + learned scores); LLM words the pick."""

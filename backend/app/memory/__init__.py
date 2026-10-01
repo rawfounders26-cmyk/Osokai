@@ -186,19 +186,24 @@ class Memory:
         return d.strftime("%Y-%m"), d.strftime("%b-%y")
 
     def month_days(self, ym: str):
-        """Per-day user-goal counts for one YYYY-MM (drives the usage graph)."""
+        """Per-day user-goal counts for one YYYY-MM (drives the usage graph).
+        Single GROUP BY query (was N+1 per day)."""
         try:
             y, m = int(ym.split("-")[0]), int(ym.split("-")[1])
             ndays = calendar.monthrange(y, m)[1]
+            lo = datetime.datetime(y, m, 1).timestamp()
+            hi = (datetime.datetime(y + (m == 12), m % 12 + 1, 1).timestamp())
         except Exception:
             return []
-        out = []
-        for d in range(1, ndays + 1):
-            lo = datetime.datetime(y, m, d).timestamp()
-            n = self.db.execute(
-                "SELECT COUNT(*) FROM turns WHERE role='user' AND ts>=? AND ts<?", (lo, lo + 86400)).fetchone()[0]
-            out.append({"date": f"{ym}-{d:02d}", "day": d, "total": n})
-        return out
+        try:
+            rows = self.db.execute(
+                "SELECT CAST(strftime('%d', ts, 'unixepoch', 'localtime') AS INT), COUNT(*) "
+                "FROM turns WHERE role='user' AND ts>=? AND ts<? GROUP BY 1", (lo, hi)).fetchall()
+            by_day = {int(r[0]): r[1] for r in rows}
+        except Exception:
+            by_day = {}
+        return [{"date": f"{ym}-{d:02d}", "day": d, "total": by_day.get(d, 0)}
+                for d in range(1, ndays + 1)]
 
     def month_detail(self, ym: str):
         """Tasks/goals + usage for one YYYY-MM bucket. Goals = user turns."""

@@ -110,6 +110,16 @@ async def _start_proactive():
     import asyncio as _aio
     try:
         try:
+            from app.db import ensure_indexes
+            from app.paths import data as _pdata
+        except ImportError:
+            from db import ensure_indexes
+            from paths import data as _pdata
+        ensure_indexes(_pdata("osokai.db"))  # 1000x: hot-path indexes every boot
+    except Exception:
+        pass
+    try:
+        try:
             from app.tasks import reconcile as _reconcile
         except ImportError:
             from tasks import reconcile as _reconcile
