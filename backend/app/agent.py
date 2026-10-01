@@ -414,27 +414,23 @@ def run_goal(goal: str, max_steps: int = 8) -> str:
     _uctx = _ctx()
     if _uctx:
         sys += f"\nUser context (identity+budgets+prefs; secrets are NEVER here):\n{_uctx}"
-    # small toolset per task: builders only when the task makes files (keeps function-calling reliable)
-    gl = goal.lower()
-    want_make = any(w in gl for w in ("ppt", "excel", "xlsx", "sheet", "slide", "report", "write", "create", "make", "build", "prepare", "generate", "plan", "code", "presentation", "budget", "memo", "resize", "convert image", "compress", "thumbnail", "meme", "image", "photo", "picture"))
-    want_bills = any(w in gl for w in ("split", "bill", "expense", "settle", "owe", "owes", "balance", "dinner", "trip", "roommates", "friends"))
-    want_wardrobe = any(w in gl for w in ("outfit", "wear", "wearing", "wardrobe", "dress", "clothes", "shirt", "fashion"))
-    want_loops = any(w in gl for w in ("remind", "reminder", "loop", "reply to", "call back", "follow up", " habit"))
-    want_dev = any(w in gl for w in ("code", "test", "pytest", "debug", "repo", " git", "npm", "script", "run "))
-    want_know = any(w in gl for w in ("research", "my docs", "workspace", "ask my", "agent", "rag", "deep"))
-    tools = [t for t in TOOLS if t["function"]["name"] in ("open_url", "open_app", "browser", "web_search", "fetch_url", "seo_check", "cal_add", "cal_list", "email_compose", "trip_plan", "profile_get", "profile_set", "pref_add")]
-    if want_dev:
-        tools += [t for t in TOOLS if t["function"]["name"] in ("shell", "git")]
-    if want_know:
-        tools += [t for t in TOOLS if t["function"]["name"] in ("rag_ask", "research", "build_agent")]
-    if want_loops:
-        tools += [t for t in TOOLS if t["function"]["name"] in ("loop_add", "loop_done", "loop_due")]
-    if want_make:
-        tools += [t for t in TOOLS if t["function"]["name"] in ("make_pptx", "make_xlsx", "write_file", "run_tests", "img_op", "img_generate")]
-    if want_bills:
-        tools += [t for t in TOOLS if t["function"]["name"].startswith("bill_")]
-    if want_wardrobe:
-        tools += [t for t in TOOLS if t["function"]["name"] in ("wardrobe_add", "wardrobe_list", "outfit_suggest")]
+    # capability router: goal+roles aware tool selection (replaces keyword flags)
+    try:
+        from app.capabilities import route as _route_tools
+    except ImportError:
+        try:
+            from capabilities import route as _route_tools
+        except ImportError:
+            _route_tools = None
+    _all_names = [t["function"]["name"] for t in TOOLS]
+    if _route_tools:
+        try:
+            _r = _route_tools(goal, roles, _all_names)
+            tools = [t for t in TOOLS if t["function"]["name"] in set(_r["tools"])]
+        except Exception:
+            tools = [t for t in TOOLS if t["function"]["name"] in ("open_url", "open_app", "browser", "web_search", "fetch_url", "seo_check", "cal_add", "cal_list", "email_compose", "trip_plan", "profile_get", "profile_set", "pref_add")]
+    else:
+        tools = [t for t in TOOLS if t["function"]["name"] in ("open_url", "open_app", "browser", "web_search", "fetch_url", "seo_check", "cal_add", "cal_list", "email_compose", "trip_plan", "profile_get", "profile_set", "pref_add")]
 
     msgs = [{"role": "system", "content": sys}, {"role": "user", "content": goal}]
     body = {"model": model, "messages": msgs, "tools": tools, "max_tokens": 1500}

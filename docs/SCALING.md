@@ -1,5 +1,10 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## capability router — ✅ DONE: goal-aware tool selection (keyword flags retired)
+- [x] `app/capabilities.py`: 38 tools scored by weighted keyword phrases + role-signal overlap; base capabilities always ride; capped at 18; every inclusion explained.
+- [x] Wired into `run_goal` with safe fallback. Bidirectional substring matching (catches `ppt`→`pptx`).
+- [x] Live-verified agent loop on the routed set. 3 evals: domain tools, base+cap+determinism, role signal.
+
 ## policy engine — ✅ DONE: risk tiers + scope + injection guards (sentinel upgraded)
 - [x] `app/policy/` package: `risk.py` (LOW/MEDIUM/HIGH/CRITICAL with amount thresholds + reasons), `scope.py` (tool+destination+quiet-hours evaluation), `guards.py` (12 instruction-override patterns + scrub markers).
 - [x] Chat gate: policy first, injection scan, keyword sentinel as fallback. Verified live: benign→local, email→approval, injection→confirm-intent approval.
@@ -100,5 +105,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 78 nightly evals gating every release — reliability story.
+- 81 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.
