@@ -423,6 +423,11 @@ export const wakeList = () => get('/context/wake').then(j => j.conditions || [])
 export const personAdd = (name, relation = '', notes = '') => post('/memory/people', { name, relation, notes });
 export const placeAdd = (name, kind = '', notes = '') => post('/memory/places', { name, kind, notes });
 export const recallAll = (q) => get(`/memory/recall-all?q=${encodeURIComponent(q)}`).then(j => j.results || []);
+
+// persistent specialists surfaces
+export const specSeed = () => post('/specialists/seed', {});
+export const specList = () => get('/specialists').then(j => j.specialists || []);
+export const specRun = (sid) => post(`/specialists/${sid}/run-now`, {});
 // live sync: one socket per app session, backoff reconnect, heartbeat-safe
 let syncSock = null;
 let syncDelay = 5000;

@@ -201,6 +201,19 @@ async def loop():
                         await hub.push()
                     except Exception:
                         pass
+            try:
+                from app.specialists import tick as _spec_tick
+            except ImportError:
+                from specialists import tick as _spec_tick
+            if await asyncio.to_thread(_spec_tick):
+                try:
+                    try:
+                        from app.main import hub
+                    except ImportError:
+                        from main import hub
+                    await hub.push()
+                except Exception:
+                    pass
         except Exception:
             pass
         await asyncio.sleep(30)

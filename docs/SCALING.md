@@ -1,5 +1,10 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## persistent specialists — ✅ DONE: named autonomous workers (event-triggered, not always-on)
+- [x] `app/specialists.py`: persona + skill + schedule/wake triggers + run history; wake conditions auto-created and cascade-deleted; due-tick wired into the scheduler loop.
+- [x] Seed trio (Researcher/Watcher/Scheduler), 7 endpoints, mobile wrappers. Verified live: seed → run → history → cleanup.
+- [x] 2 evals: CRUD/validation/run/audit + wake-link/cascade/seed idempotency.
+
 ## benchmark harness — ✅ DONE: 100-task battery, plan 100/100, north-star metric
 - [x] `app/benchmark/tasks.py`: 100 tasks × 8 categories (browser/research/email_calendar/coding/personal/bills/wardrobe/long_running) with expected tools + approval flags.
 - [x] `app/benchmark/run.py`: PLAN mode (offline routing+gate accuracy, CI-safe) + LIVE mode (env-gated, budget-capped, cost/intervention tracking) + run history + `interventions_per_goal` (event-window attribution).
@@ -111,5 +116,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 84 nightly evals gating every release — reliability story.
+- 86 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

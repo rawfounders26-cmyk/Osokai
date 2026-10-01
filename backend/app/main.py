@@ -2186,3 +2186,76 @@ try:
 except ImportError:
     from benchmark.api import router as _bench_router
 app.include_router(_bench_router)
+
+# ---- persistent specialists: named autonomous workers ----
+@app.post("/specialists/seed")
+async def spec_seed(_=Depends(need_auth)):
+    try:
+        from app.specialists import seed
+    except ImportError:
+        from specialists import seed
+    r = seed()
+    await hub.push()
+    return r
+
+@app.get("/specialists")
+def spec_list(_=Depends(need_auth)):
+    try:
+        from app.specialists import list_specialists
+    except ImportError:
+        from specialists import list_specialists
+    return {"specialists": list_specialists()}
+
+@app.post("/specialists")
+async def spec_create(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.specialists import create
+    except ImportError:
+        from specialists import create
+    r = create(payload.get("name", ""), payload.get("persona", ""), payload.get("skill", ""),
+               payload.get("kind", "nudge_scan"), payload.get("args", {}),
+               int(payload.get("every_min", 0)), payload.get("at_time", ""),
+               payload.get("wake_event", ""), payload.get("wake_match", {}))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad specialist"))
+    await hub.push()
+    return r
+
+@app.post("/specialists/{sid}/run-now")
+async def spec_run(sid: int, _=Depends(need_auth)):
+    import asyncio as _aio
+    try:
+        from app.specialists import run_now
+    except ImportError:
+        from specialists import run_now
+    r = await _aio.to_thread(run_now, sid)
+    await hub.push()
+    return r
+
+@app.post("/specialists/{sid}/enable")
+async def spec_enable(sid: int, payload: dict, _=Depends(need_auth)):
+    try:
+        from app.specialists import set_active
+    except ImportError:
+        from specialists import set_active
+    r = set_active(sid, bool(payload.get("active", True)))
+    await hub.push()
+    return r
+
+@app.delete("/specialists/{sid}")
+async def spec_delete(sid: int, _=Depends(need_auth)):
+    try:
+        from app.specialists import remove
+    except ImportError:
+        from specialists import remove
+    r = remove(sid)
+    await hub.push()
+    return r
+
+@app.get("/specialists/runs")
+def spec_runs(sid: int = 0, limit: int = 20, _=Depends(need_auth)):
+    try:
+        from app.specialists import runs
+    except ImportError:
+        from specialists import runs
+    return {"runs": runs(sid, limit)}

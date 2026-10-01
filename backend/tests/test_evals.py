@@ -1062,3 +1062,40 @@ def test_live_gated_and_interventions(tmp_path, monkeypatch):
     events.emit("approval.requested", {"id": 1, "message": "probe"})
     m = run.interventions_per_goal()
     assert m["goals"] >= 1 and m["avg_interventions"] >= 1.0
+
+# ---- persistent specialists evals: identity, triggers, runs, seed ----
+
+def test_specialists_crud_and_run(tmp_path, monkeypatch):
+    import specialists
+    monkeypatch.setattr(specialists, "DB", str(tmp_path / "sp.db"))
+    assert specialists.create("", "p")["ok"] is False
+    assert specialists.create("X", "p", "s", "nope")["ok"] is False
+    assert specialists.create("X", "p", "s", "nudge_scan", {}, 0, "", "nope")["ok"] is False
+    r = specialists.create("Probe", "watches probes", "deep-research", "nudge_scan", {}, 60)
+    assert r["ok"] and r["wake_condition"] == 0
+    assert len(specialists.list_specialists()) == 1
+    out = specialists.run_now(r["id"])
+    assert out["ok"]  # nudge_scan always runs
+    assert len(specialists.runs(r["id"])) == 1
+    assert specialists.run_now(999999)["ok"] is False
+    specialists.set_active(r["id"], False)
+    assert specialists.list_specialists()[0]["active"] is False
+    specialists.remove(r["id"])
+    assert specialists.list_specialists() == []
+
+
+def test_specialists_wake_link_and_seed(tmp_path, monkeypatch):
+    import specialists
+    from context import wake
+    monkeypatch.setattr(specialists, "DB", str(tmp_path / "sp2.db"))
+    _patch_both(monkeypatch, "context.wake", "DB", str(tmp_path / "w3.db"))
+    r = specialists.create("Watcher2", "watches", "s", "nudge_scan", {}, 0, "", "goal.stalled", {})
+    assert r["ok"] and r["wake_condition"] > 0  # wake condition auto-created + linked
+    conds = wake.list_conditions()
+    assert any(c["id"] == r["wake_condition"] for c in conds)
+    specialists.remove(r["id"])
+    assert all(c["id"] != r["wake_condition"] for c in wake.list_conditions())  # cascade delete
+    s = specialists.seed()
+    assert s["ok"] and set(s["seeded"]) == {"Researcher", "Watcher", "Scheduler"}
+    assert len(specialists.list_specialists()) == 3
+    assert specialists.seed()["seeded"] == []  # idempotent
