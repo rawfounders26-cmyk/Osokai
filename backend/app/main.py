@@ -568,7 +568,7 @@ async def _chat_impl(body: ChatIn, request: Request):
     # outfit/bills/social fast intents run before calendar+policy (structured handlers
     # own their approvals; the generic policy gate must not hijack them)
     _pre, _ = intent_parse(body.message)
-    if _pre and _pre.get("type", "").startswith(("outfit_", "bill_", "social_")):
+    if _pre and _pre.get("type", "").startswith(("outfit_", "bill_", "social_", "telegram_", "github_", "cal_", "pay_", "wa_", "yt_")):
         mem.add("user", body.message)
         reply = _san(intent_run(_pre, body.device))
         mem.add("Osok-AI", reply)
@@ -2231,6 +2231,161 @@ def social_status(post_id: int = 0, limit: int = 20, _=Depends(need_auth)):
     except ImportError:
         from social import status
     return {"posts": status(post_id, limit)}
+
+# ---- tier-1 connectors: telegram, calendar depth, github ----
+@app.post("/telegram/send")
+async def telegram_send(payload: dict, _=Depends(need_auth)):
+    """Approval-bound send: needs a granted dispatcher approval for exact chat+text."""
+    try:
+        from app.policy.dispatch import execute_approved
+    except ImportError:
+        from policy.dispatch import execute_approved
+    r = execute_approved(int(payload.get("approval_id", 0)), "telegram_send",
+                         {"chat_id": payload.get("chat_id", ""), "text": payload.get("text", "")}, "api")
+    if not r.get("ok"):
+        raise HTTPException(status_code=403, detail=r.get("error", "not approved"))
+    await hub.push()
+    return r
+
+@app.post("/telegram/enable")
+async def telegram_enable(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.telegram import enable_chat
+    except ImportError:
+        from telegram import enable_chat
+    r = enable_chat(payload.get("chat_id", ""), bool(payload.get("enabled", True)))
+    await hub.push()
+    return r
+
+@app.post("/telegram/poll")
+async def telegram_poll(_=Depends(need_auth)):
+    import asyncio as _aio
+    try:
+        from app.telegram import poll_once
+    except ImportError:
+        from telegram import poll_once
+    r = await _aio.to_thread(poll_once)
+    await hub.push()
+    return r
+
+@app.get("/calendar/free")
+def calendar_free(day: str = "", mins: int = 60, _=Depends(need_auth)):
+    try:
+        from app import calendar as _cal
+    except ImportError:
+        import calendar as _cal
+    r = _cal.free_slots(day, max(15, min(480, mins)))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad day"))
+    return r
+
+@app.post("/calendar/invite")
+async def calendar_invite(payload: dict, _=Depends(need_auth)):
+    try:
+        from app import calendar as _cal
+    except ImportError:
+        import calendar as _cal
+    r = _cal.invite(payload.get("title", ""), payload.get("day", ""),
+                    payload.get("time", ""), payload.get("attendees", ""))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "invite blocked"))
+    await hub.push()
+    return r
+
+@app.get("/github/repos")
+def github_repos(limit: int = 10, _=Depends(need_auth)):
+    try:
+        from app import github as _gh
+    except ImportError:
+        import github as _gh
+    r = _gh.repos(limit)
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "github failed"))
+    return r
+
+@app.get("/github/issues")
+def github_issues(repo: str, state: str = "open", limit: int = 10, _=Depends(need_auth)):
+    try:
+        from app import github as _gh
+    except ImportError:
+        import github as _gh
+    r = _gh.issues(repo, state, limit)
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "github failed"))
+    return r
+
+@app.get("/github/brief")
+async def github_brief(repo: str, _=Depends(need_auth)):
+    try:
+        from app import github as _gh
+    except ImportError:
+        import github as _gh
+    r = _gh.repo_brief(repo)
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "github failed"))
+    await hub.push()
+    return r
+
+# ---- tier-2 connectors: razorpay collect, whatsapp, youtube ----
+@app.post("/pay/collect")
+async def pay_collect(payload: dict, _=Depends(need_auth)):
+    try:
+        from app import razorpay as _rz
+    except ImportError:
+        import razorpay as _rz
+    me = ""
+    try:
+        from app import profile as _prof
+    except ImportError:
+        import profile as _prof
+    try:
+        me = (_prof.get_profile() or {}).get("upi_id", "")
+    except Exception:
+        pass
+    r = _rz.collect_link(payload.get("amount", 0), me or payload.get("upi_id", ""),
+                         payload.get("note", ""))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "collect failed"))
+    await hub.push()
+    return r
+
+@app.post("/razorpay/order")
+async def razorpay_order(payload: dict, _=Depends(need_auth)):
+    """Approval-bound: executes only on a granted dispatcher approval for the exact amount."""
+    try:
+        from app.policy.dispatch import execute_approved
+    except ImportError:
+        from policy.dispatch import execute_approved
+    if not payload.get("approval_id"):
+        raise HTTPException(status_code=403, detail="razorpay orders need a granted approval_id")
+    r = execute_approved(int(payload["approval_id"]), "razorpay_order",
+                         {"amount": str(payload.get("amount", "")), "receipt": payload.get("receipt", "")}, "api")
+    if not r.get("ok"):
+        raise HTTPException(status_code=403, detail=r.get("error", "not approved"))
+    await hub.push()
+    return r
+
+@app.get("/razorpay/order")
+def razorpay_status(order_id: str, _=Depends(need_auth)):
+    try:
+        from app import razorpay as _rz
+    except ImportError:
+        import razorpay as _rz
+    r = _rz.order_status(order_id)
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "lookup failed"))
+    return r
+
+@app.get("/youtube/latest")
+def youtube_latest(channel: str, limit: int = 8, _=Depends(need_auth)):
+    try:
+        from app import youtube as _yt
+    except ImportError:
+        import youtube as _yt
+    r = _yt.latest_videos(channel, limit)
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "feed failed"))
+    return r
 
 @app.post("/bills/receipt")
 async def bills_receipt(payload: dict, _=Depends(need_auth)):

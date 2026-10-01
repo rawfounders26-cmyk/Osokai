@@ -490,6 +490,21 @@ export const socialManifests = () => get('/social/manifests').then(j => j.platfo
 export const socialDraft = (platform, text) => post('/social/draft', { platform, text });
 export const socialStatus = () => get('/social/status').then(j => j.posts || []);
 
+// tier-1 connectors surfaces
+export const telegramSend = (approval_id, chat_id, text) =>
+  post('/telegram/send', { approval_id, chat_id, text });
+export const calFree = (day = '', mins = 60) =>
+  get(`/calendar/free?day=${encodeURIComponent(day)}&mins=${mins}`);
+export const calInvite = (title, day, time = '', attendees = '') =>
+  post('/calendar/invite', { title, day, time, attendees });
+export const githubBrief = (repo) => get(`/github/brief?repo=${encodeURIComponent(repo)}`);
+
+// tier-2 connectors surfaces
+export const payCollect = (amount, upi_id = '', note = '') =>
+  post('/pay/collect', { amount, upi_id, note });
+export const ytLatest = (channel, limit = 8) =>
+  get(`/youtube/latest?channel=${encodeURIComponent(channel)}&limit=${limit}`).then(j => j.videos || []);
+
 // persistent specialists surfaces
 export const specSeed = () => post('/specialists/seed', {});
 export const specList = () => get('/specialists').then(j => j.specialists || []);

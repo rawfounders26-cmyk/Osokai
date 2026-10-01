@@ -133,6 +133,40 @@ def parse(message: str):
     if m:
         return {"type": "social_status"}, None
 
+    # tier-1 connectors: telegram send, github brief, free slots, invites
+    m = re.match(r"^(?:telegram|tg|send telegram)\s+(.+?)\s+to\s+(\S+)$", t)
+    if m:
+        return {"type": "telegram_send", "text": m.group(1).strip(), "chat_id": m.group(2).strip()}, None
+    m = re.match(r"^(?:github|gh)\s+(.+)$", t)
+    if m:
+        rest = m.group(1).strip()
+        if "/" in rest.split()[0]:
+            return {"type": "github_brief", "repo": rest.split()[0]}, None
+        return {"type": "github_repos"}, None
+    m = re.match(r"^(?:free slots|when am i free|free time)(?:\s+(today|tomorrow|\S+))?(?:\s+for\s+(?:(\d+)\s*min|an?\s*hour))?$", t)
+    if m:
+        mins = int(m.group(2) or 60) if m.group(2) else 60
+        return {"type": "cal_free", "day": (m.group(1) or "").strip(), "mins": mins}, None
+    m = re.match(r"^invite\s+(.+?)\s+to\s+(.+?)\s+(today|tomorrow|\S+)(?:\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?$", t)
+    if m:
+        return {"type": "cal_invite", "title": m.group(1).strip(), "attendees": m.group(2).strip(),
+                "day": m.group(3).strip(), "time": (m.group(4) or "").strip()}, None
+
+    # tier-2 connectors: razorpay/collect, whatsapp, youtube
+    m = re.match(r"^(?:razorpay|rzp)?\s*collect\s+(\d[\d,]*)\s+from\s+(\S+)(?:\s+for\s+(.+))?$", t)
+    if m:
+        return {"type": "pay_collect", "amount": m.group(1).replace(",", ""),
+                "upi": m.group(2).strip(), "note": (m.group(3) or "").strip()}, None
+    m = re.match(r"^whatsapp\s+(.+?)\s+to\s+(\+\d{10,15})$", t)
+    if m:
+        return {"type": "wa_send", "text": m.group(1).strip(), "to": m.group(2).strip()}, None
+    m = re.match(r"^(?:latest videos|new videos)(?: from| on)?\s+(.+)$", t)
+    if m:
+        return {"type": "yt_latest", "channel": m.group(1).strip()}, None
+    m = re.match(r"^youtube\s+(https?://\S+|@\S+|[A-Za-z0-9_-]{10,})$", t)
+    if m:
+        return {"type": "yt_latest", "channel": m.group(1).strip()}, None
+
     # bills: quick split / settle up / recurring / house ledger
     m = re.match(r"^split (\d[\d,]*)\s+for\s+(.+?)\s+(?:with|in|among)\s+(.+)$", t)
     if m:
@@ -426,6 +460,104 @@ def execute(action: dict, device: str = "unknown"):
                 return (f"Drafted for {plat} (#{d['id']}). Publishing needs approval "
                         f"#{g['approval_id']} — approve on mobile/Command Port and it posts exactly this, once.")
             return f"Drafted for {plat} (#{d['id']}). Gate says: {g.get('error', 'blocked')}."
+    if at in ("telegram_send", "github_brief", "github_repos", "cal_free", "cal_invite",
+                "pay_collect", "wa_send", "yt_latest"):
+        if at == "telegram_send":
+            try:
+                from app.policy.dispatch import request as _gate
+            except ImportError:
+                from policy.dispatch import request as _gate
+            g = _gate("telegram_send", {"chat_id": action.get("chat_id", ""),
+                                        "text": action.get("text", "")}, "chat")
+            if g.get("waiting"):
+                return (f"Telegram message staged. Send needs approval #{g['approval_id']} — "
+                        f"approve and it sends exactly this, once.")
+            return f"Telegram gate says: {g.get('error', 'blocked')}."
+        if at == "github_brief":
+            try:
+                from app import github as _gh
+            except ImportError:
+                import github as _gh
+            r = _gh.repo_brief(action.get("repo", ""))
+            return r.get("reply", f"GitHub failed: {r.get('error')}")
+        if at == "github_repos":
+            try:
+                from app import github as _gh
+            except ImportError:
+                import github as _gh
+            r = _gh.repos()
+            if not r.get("ok"):
+                return f"GitHub: {r.get('error')}"
+            return "Your repos:\n" + "\n".join(
+                f"• {x['full']} ★{x['stars']} ({x['open_issues']} open)" for x in r["repos"][:8])
+        if at == "cal_free":
+            try:
+                from app import calendar as _cal
+            except ImportError:
+                import calendar as _cal
+            import datetime as _dt
+            day = action.get("day", "")
+            if day in ("today", "tomorrow"):
+                day = (_dt.date.today() + _dt.timedelta(days=1 if day == "tomorrow" else 0)).isoformat()
+            r = _cal.free_slots(day, action.get("mins", 60))
+            if not r.get("ok"):
+                return f"Free slots: {r.get('error')}"
+            if not r["free"]:
+                return f"No {action.get('mins', 60)}-min window on {r['day']}."
+            return f"Free on {r['day']}: " + ", ".join(f"{s['from']}–{s['to']}" for s in r["free"][:4])
+        if at == "cal_invite":
+            try:
+                from app import calendar as _cal
+            except ImportError:
+                import calendar as _cal
+            r = _cal.invite(action.get("title", ""), action.get("day", ""),
+                            action.get("time", ""), action.get("attendees", ""))
+            if not r.get("ok"):
+                return f"Invite blocked: {r.get('error')}"
+            inv = f" + {len(r['invites_drafted'])} invite draft(s)" if r["invites_drafted"] else ""
+            return f"Event #{r['event_id']} {r['when']}{inv} — sends stay approval-gated."
+        if at == "pay_collect":
+            try:
+                from app import razorpay as _rz
+            except ImportError:
+                import razorpay as _rz
+            me = ""
+            try:
+                from app import profile as _prof
+            except ImportError:
+                import profile as _prof
+            try:
+                me = (_prof.get_profile() or {}).get("upi_id", "")
+            except Exception:
+                pass
+            r = _rz.collect_link(action.get("amount", 0), me or action.get("upi", ""),
+                                 action.get("note", ""))
+            if not r.get("ok"):
+                return (f"Collect: {r.get('error')}. Set your UPI id first "
+                        f"('my UPI id is name@bank' or pass a UPI id).")
+            return f"Collect ₹{action['amount']}: {r['upi']}"
+        if at == "wa_send":
+            try:
+                from app.policy.dispatch import request as _gate
+            except ImportError:
+                from policy.dispatch import request as _gate
+            g = _gate("whatsapp_send", {"to": action.get("to", ""), "text": action.get("text", "")}, "chat")
+            if g.get("waiting"):
+                return (f"WhatsApp to {action.get('to')} staged. Send needs approval "
+                        f"#{g['approval_id']} — approve and it sends exactly this, once.")
+            return f"WhatsApp gate says: {g.get('error', 'blocked')}."
+        if at == "yt_latest":
+            try:
+                from app import youtube as _yt
+            except ImportError:
+                import youtube as _yt
+            r = _yt.latest_videos(action.get("channel", ""), 8)
+            if not r.get("ok"):
+                return f"YouTube: {r.get('error')}"
+            if not r["videos"]:
+                return "No recent videos found on that channel."
+            return "Latest:\n" + "\n".join(
+                f"• {v['title'][:70]} ({v['published']}) {v['url']}" for v in r["videos"][:5])
     if at == "img":
         try:
             from app import img as _img

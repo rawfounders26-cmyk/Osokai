@@ -105,6 +105,61 @@ def execute(step: dict, device: str = "verify"):
             r = request_fill(args.get("domain", ""), "login")
             return {"ok": True, "evidence": f"fill request #{r.get('id')} (mediated, never raw)",
                     "id": r.get("id")}
+        if name == "telegram_send":
+            try:
+                from app.telegram import send as _tsend
+            except ImportError:
+                from telegram import send as _tsend
+            r = _tsend(args.get("chat_id", ""), args.get("text", ""))
+            if not r.get("ok"):
+                return {"ok": False, "evidence": r.get("error", "telegram send failed")}
+            return {"ok": True, "evidence": "telegram sent"}
+        if name == "whatsapp_send":
+            try:
+                from app import whatsapp as _wa
+            except ImportError:
+                import whatsapp as _wa
+            r = _wa.send_text(args.get("to", ""), args.get("text", ""))
+            if not r.get("ok"):
+                return {"ok": False, "evidence": r.get("error", "whatsapp send failed")}
+            return {"ok": True, "evidence": f"whatsapp sent {r.get('message_id', '')}"}
+        if name == "razorpay_order":
+            try:
+                from app import razorpay as _rz
+            except ImportError:
+                import razorpay as _rz
+            r = _rz.create_order(args.get("amount", 0), args.get("receipt", ""))
+            if not r.get("ok"):
+                return {"ok": False, "evidence": r.get("error", "order failed")}
+            return {"ok": True, "evidence": f"order {r['order_id']} ₹{r['amount_inr']}",
+                    "id": r["order_id"]}
+        if name == "github_read":
+            try:
+                from app import github as _gh
+            except ImportError:
+                import github as _gh
+            what = (args.get("what", "brief") or "brief").lower()
+            repo = args.get("repo", "")
+            if what == "issues":
+                r = _gh.issues(repo)
+            elif what == "ci":
+                r = _gh.ci_status(repo)
+            else:
+                r = _gh.repo_brief(repo)
+            if not r.get("ok"):
+                return {"ok": False, "evidence": r.get("error", "github read failed")}
+            return {"ok": True, "evidence": (r.get("reply") or "ok")[:500]}
+        if name == "calendar_invite":
+            try:
+                from app import calendar as _cal2
+            except ImportError:
+                import calendar as _cal2
+            r = _cal2.invite(args.get("title", ""), args.get("day", ""),
+                             args.get("time", ""), args.get("attendees", ""))
+            if not r.get("ok"):
+                return {"ok": False, "evidence": r.get("error", "invite failed")}
+            return {"ok": True, "evidence": f"event #{r.get('event_id')} + {len(r.get('invites_drafted', []))} drafts",
+                    "id": r.get("event_id")}
         if name == "social_draft":
             try:
                 from app.social import draft
@@ -210,6 +265,14 @@ def verify(step: dict, exec_out: dict):
             rows = _st(pid)
             ok = bool(rows) and rows[0].get("status") in ("complete", "published", "processing")
             return {"pass": ok, "evidence": f"post #{pid} status={rows[0].get('status') if rows else 'MISSING'}"}
+        if name == "telegram_send":
+            if _looks_like_error(exec_out.get("evidence", "")):
+                return {"pass": False, "evidence": "telegram reported an error"}
+            return {"pass": True, "evidence": exec_out.get("evidence", "")}
+        if name == "github_read":
+            return {"pass": True, "evidence": exec_out.get("evidence", "")}
+        if name == "calendar_invite":
+            return {"pass": bool(exec_out.get("id")), "evidence": exec_out.get("evidence", "")}
         if name == "add_loop":
             lid = exec_out.get("id")
             if not lid:
@@ -224,6 +287,19 @@ def verify(step: dict, exec_out: dict):
             if _looks_like_error(exec_out.get("evidence", "")):
                 return {"pass": False, "evidence": "action reported an error, not success"}
             return {"pass": True, "evidence": exec_out.get("evidence", "")}
+        if name == "whatsapp_send":
+            return {"pass": True, "evidence": exec_out.get("evidence", "")}
+        if name == "razorpay_order":
+            oid = exec_out.get("id")
+            if not oid:
+                return {"pass": False, "evidence": "no order id observed"}
+            try:
+                from app import razorpay as _rz
+            except ImportError:
+                import razorpay as _rz
+            st = _rz.order_status(oid)
+            ok = st.get("ok") and st.get("order_id") == oid
+            return {"pass": bool(ok), "evidence": f"order {oid} status={st.get('status') if ok else 'UNVERIFIED'}"}
         if name == "ask_user":
             return {"pass": False, "evidence": "waiting on human", "waiting": True}
     except Exception as e:

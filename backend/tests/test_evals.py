@@ -1044,9 +1044,9 @@ def test_router_roles_add_signal():
 
 def test_battery_shape():
     from benchmark import tasks
-    assert tasks.count() == 106
+    assert tasks.count() == 118
     assert set(tasks.CATEGORIES) == {"browser", "research", "email_calendar", "coding",
-                                     "personal", "bills", "wardrobe", "social", "long_running"}
+                                     "personal", "bills", "wardrobe", "social", "connectors", "long_running"}
     seen = set()
     for tid, cat, prompt, tools, appr in tasks.TASKS:
         assert cat in tasks.CATEGORIES and prompt and tools
@@ -1059,7 +1059,7 @@ def test_plan_run_scores(tmp_path, monkeypatch):
     from benchmark import run
     monkeypatch.setattr(run, "DB", str(tmp_path / "bench.db"))
     r = run.run_plan()
-    assert r["ok"] and r["total"] == 106 and r["mode"] == "plan"
+    assert r["ok"] and r["total"] == 118 and r["mode"] == "plan"
     assert set(r["by_category"]) == set(__import__("benchmark.tasks", fromlist=["CATEGORIES"]).CATEGORIES)
     assert r["score"] >= 95  # routing + gates must hold the line as the battery grows
     hist = run.history()
@@ -1686,3 +1686,116 @@ def test_social_intents_and_propose():
     assert v["ok"] and v["needs_approval"] is True
     v = validate([{"action": "social_draft", "args": {"platform": "", "text": ""}}])
     assert v["ok"] is False
+
+# ---- tier-1 connectors evals: telegram, calendar depth, github ----
+
+def test_telegram_manifest_and_gate(tmp_path, monkeypatch):
+    import telegram
+    assert telegram.send("", "")["ok"] is False
+    assert telegram.send("123", "x" * 5000)["ok"] is False
+    assert telegram.send("123", "hi")["ok"] is False  # no token in test env
+    assert "no Telegram token" in telegram.send("123", "hi")["error"]
+    from policy.scope import gate_for_text
+    assert gate_for_text("text mom on telegram")["gate"] == "approval"
+    from actions import validate
+    v = validate([{"action": "telegram_send", "args": {"chat_id": "1", "text": "hi"}}])
+    assert v["ok"] and v["needs_approval"] is True
+
+
+def test_calendar_free_conflicts_invite(tmp_path, monkeypatch):
+    import sys as _s
+    _s.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from app import calendar
+    import datetime as _dt
+    monkeypatch.setattr(calendar, "DB", str(tmp_path / "cal2.db"))
+    day = _dt.date.today().isoformat()
+    calendar.add("Dentist", day, "5pm")
+    free = calendar.free_slots(day, 60)
+    assert free["ok"] and all(s["to"] <= "17:00" or s["from"] >= "18:00" for s in free["free"])
+    c = calendar.conflicts("Call", day, "5:30pm")
+    assert len(c["conflicts"]) == 1
+    assert calendar.conflicts("Call", day, "")["conflicts"] == []
+    bad = calendar.invite("X", day, "5:15pm", "")
+    assert bad["ok"] is False and "collides" in bad["error"]
+    ok = calendar.invite("Lunch", day, "1pm", "a@b.c")
+    assert ok["ok"] and len(ok["invites_drafted"]) == 1
+    assert calendar.free_slots("not-a-day")["ok"] is False
+
+
+def test_github_no_token_paths():
+    import github
+    import os as _os
+    _os.environ.pop("GITHUB_TOKEN", None)
+    assert github.repos()["ok"] is False
+    assert github.issues("badformat")["ok"] is False
+    assert github.ci_status("")["ok"] is False
+    from actions import validate
+    v = validate([{"action": "github_read", "args": {"repo": "o/r"}}])
+    assert v["ok"] and v["needs_approval"] is False
+
+
+def test_tier1_intents_and_propose():
+    from intents import parse
+    from actions import propose
+    got, _ = parse("telegram running late to 12345")
+    assert got and got["type"] == "telegram_send" and got["chat_id"] == "12345"
+    got, _ = parse("github rawfounders26-cmyk/Osokai")
+    assert got and got["type"] == "github_brief"
+    got, _ = parse("when am i free tomorrow for an hour")
+    assert got and got["type"] == "cal_free"
+    got, _ = parse("invite Priya to lunch Friday")
+    assert got and got["type"] == "cal_invite"
+    assert propose("Send a telegram message")[0]["action"] == "telegram_send"
+    assert propose("Check my repo CI status")[0]["action"] == "github_read"
+    assert propose("Invite the team to lunch")[0]["action"] == "calendar_invite"
+
+# ---- tier-2 connectors evals: razorpay, whatsapp, youtube ----
+
+def test_tier2_money_and_whatsapp(tmp_path, monkeypatch):
+    import razorpay
+    import whatsapp
+    assert razorpay.create_order(0)["ok"] is False
+    assert razorpay.create_order(-5)["ok"] is False
+    assert razorpay.create_order(100)["ok"] is False  # no creds in test env
+    assert razorpay.order_status("x")["ok"] is False
+    r = razorpay.collect_link(500, "me@okhdfc", "test")
+    assert r["ok"] and r["upi"].startswith("upi://pay?")
+    assert razorpay.collect_link(500, "not-an-upi")["ok"] is False
+    assert razorpay.collect_link(0, "me@okhdfc")["ok"] is False
+    assert whatsapp.send_text("123", "hi")["ok"] is False  # bad destination
+    assert whatsapp.send_text("+911234567890", "")["ok"] is False
+    assert whatsapp.send_text("+911234567890", "hi")["ok"] is False  # no creds
+    from policy.scope import gate_for_text
+    assert gate_for_text("Collect ₹500 from flatmates")["gate"] == "approval"
+    from actions import validate
+    v = validate([{"action": "razorpay_order", "args": {"amount": "500", "receipt": "r1"}}])
+    assert v["ok"] and v["needs_approval"] is True
+    v = validate([{"action": "whatsapp_send", "args": {"to": "+911234567890", "text": "hi"}}])
+    assert v["ok"] and v["needs_approval"] is True
+
+
+def test_tier2_intents():
+    from intents import parse
+    got, _ = parse("collect 500 from me@okhdfc for dinner")
+    assert got and got["type"] == "pay_collect" and got["amount"] == "500"
+    got, _ = parse("whatsapp running late to +911234567890")
+    assert got and got["type"] == "wa_send" and got["to"] == "+911234567890"
+    got, _ = parse("latest videos from somechannel")
+    assert got and got["type"] == "yt_latest"
+    got, _ = parse("youtube thira")
+    assert got is None or got.get("type") != "yt_latest"  # tamil music stays music
+
+
+def test_youtube_rss_live():
+    import youtube
+    assert youtube.latest_videos("!!!")["ok"] is False
+    assert youtube._channel_id("https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw") == "UC_x5XG1OV2P6uZZ5FSM9Ttw"
+    sample = ('<feed xmlns="http://www.w3.org/2005/Atom">'
+              '<entry><id>yt:video:abc123</id><title>Test Video</title>'
+              '<published>2026-09-01T00:00:00+00:00</published></entry></feed>')
+    vids = youtube._parse_feed(sample, "UC_x", 3)
+    assert len(vids) == 1 and vids[0]["url"] == "https://youtu.be/abc123"
+    assert vids[0]["published"] == "2026-09-01"
+    r = youtube.latest_videos("UC_x5XG1OV2P6uZZ5FSM9Ttw", 3)  # live: either videos or clean error
+    assert (r["ok"] and r["videos"] and r["videos"][0]["url"].startswith("https://youtu.be/")) or \
+           (not r["ok"] and "error" in r)

@@ -12,7 +12,8 @@ RULES = [
     ("HIGH", [r"\bsend\b.*\bemail\b", r"\bdelete\b", r"\bpayment\b", r"\bbuy\b", r"\border\b",
                r"\bpay\b", r"\bpost to\b", r"\bwhatsapp send\b", r"\bsubmit\b.*\bpayment\b",
                r"\bsend\b", r"\bemail\b", r"\bcomplaint\b", r"\bleave\b",
-               r"\bpost\b", r"\bpublish\b", r"\btweet\b", r"\bannounce\b"], 10000),
+               r"\bpost\b", r"\bpublish\b", r"\btweet\b", r"\bannounce\b",
+               r"\btelegram\b", r"\bwhatsapp\b"], 10000),
     ("MEDIUM", [r"\bschedule\b", r"\bpublish\b", r"\bshare\b.*\blink\b", r"\binstall\b",
                  r"\bsettle\b", r"\bsplit\b.*\d"], 0),
 ]
@@ -47,6 +48,9 @@ def classify(text: str) -> dict:
     # a reminder ABOUT money is not moving money — notify, don't gate
     if re.search(r"\bremind", t) and re.search(r"\b(pay|payment|bill|rent)\b", t):
         return {"tier": "MEDIUM", "reason": "money reminder (not a payment)", "amount": amount}
+    # initiating collection IS money movement — gate it
+    if re.search(r"\bcollect\b", t) and amount > 0:
+        return {"tier": "HIGH", "reason": f"initiating collection of ₹{amount:,.0f}", "amount": amount}
     for tier, patterns, threshold in RULES:
         for pat in patterns:
             if re.search(pat, t):

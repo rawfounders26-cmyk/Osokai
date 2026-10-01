@@ -53,6 +53,21 @@ REGISTRY = {
     "social_publish": {"args": {"platform": "str", "text": "str"}, "required": ["platform", "text"],
                        "effect": "outside", "approval": True,
                        "desc": "Publish a social post (idempotent; approval-bound)"},
+    "telegram_send": {"args": {"chat_id": "str", "text": "str"}, "required": ["chat_id", "text"],
+                      "effect": "outside", "approval": True,
+                      "desc": "Send a Telegram message (approval-bound)"},
+    "whatsapp_send": {"args": {"to": "str", "text": "str"}, "required": ["to", "text"],
+                      "effect": "outside", "approval": True,
+                      "desc": "Send a WhatsApp message (approval-bound)"},
+    "razorpay_order": {"args": {"amount": "str", "receipt": "str"}, "required": ["amount"],
+                       "effect": "outside", "approval": True,
+                       "desc": "Create a Razorpay order in INR (approval-bound, exact amount)"},
+    "github_read": {"args": {"repo": "str", "what": "str"}, "required": ["repo"],
+                    "effect": "read", "approval": False,
+                    "desc": "Read GitHub issues/CI/repos (what: issues|ci|brief)"},
+    "calendar_invite": {"args": {"title": "str", "day": "str", "time": "str", "attendees": "str"},
+                        "required": ["title", "day"], "effect": "outside", "approval": False,
+                        "desc": "Create event + draft invites (sends stay approval-gated)"},
 }
 
 _TYPES = {"str": str, "int": int, "float": (int, float), "bool": bool}
@@ -115,8 +130,14 @@ def validate(program) -> dict:
 
 # keyword -> action templates for deterministic subtask compilation (step 3 executes)
 _RULES = [
-    (("calendar", "schedule", "meeting", "slot", "availability", "invite"), [
+    (("invite", "attendees", "rsvp"), [
+        {"action": "calendar_invite", "args": {"title": "", "day": "", "time": "", "attendees": ""}}]),
+    (("calendar", "schedule", "meeting", "slot", "availability"), [
         {"action": "calendar_list", "args": {"day": ""}}]),
+    (("telegram", "send a tg"), [
+        {"action": "telegram_send", "args": {"chat_id": "", "text": ""}}]),
+    (("whatsapp", "wa message"), [
+        {"action": "whatsapp_send", "args": {"to": "", "text": ""}}]),
     (("email", "mail", "outreach", "send", "rsvp"), [
         {"action": "email_draft", "args": {"to": "", "subject": "", "body": ""}}]),
     (("search", "research", "find", "compare", "look up", "identify", "collect"), [
@@ -131,6 +152,10 @@ _RULES = [
         {"action": "vault_fill", "args": {"key": ""}}]),
     (("post", "tweet", "share on", "publish", "announce", "linkedin"), [
         {"action": "social_draft", "args": {"platform": "", "text": ""}}]),
+    (("github", "repo", "issues", "pull request", "ci "), [
+        {"action": "github_read", "args": {"repo": "", "what": "brief"}}]),
+    (("invite", "attendees", "rsvp"), [
+        {"action": "calendar_invite", "args": {"title": "", "day": "", "time": "", "attendees": ""}}]),
 ]
 
 

@@ -1,11 +1,11 @@
 # Osok-AI evidence (F31 truth-in-advertising: numbers, not adjectives)
 
 Updated per release. Everything below is measured by the repo's own battery
-(`backend/tests/`: 124 evals) and harness — rerun any of it.
+(`backend/tests/`: 131 evals) and harness — rerun any of it.
 
 ## Current release
-- **Evals**: 124/124 green (`pytest backend/tests/ -q`)
-- **Benchmark plan mode**: 106/106 (`POST /benchmark/run {"mode":"plan"}`)
+- **Evals**: 131/131 green (`pytest backend/tests/ -q`)
+- **Benchmark plan mode**: 118/118 (`POST /benchmark/run {"mode":"plan"}`)
 - **Benchmark live mode**: opt-in only (`OSOKAI_BENCH_LIVE=1`, budget-capped); history at `GET /benchmark/history`
 - **North star**: avg interventions per goal at `GET /benchmark/interventions` (last measured 0.15; lower is better)
 - **Recall quality**: factor-explained ranking at `GET /memory/recall-explain`; shadow-feedback loop records every exposure, confirmations lift ranking (see recall_feedback table)
@@ -18,6 +18,7 @@ Updated per release. Everything below is measured by the repo's own battery
 ## History
 | Date | Evals | Plan score | Interventions/goal | Note |
 |---|---|---|---|---|
+| 2026-10-01 | 131 | 118/118 | 0.15 | connectors tier-1+2 (12 providers, chat-driven, gated) |
 | 2026-10-01 | 124 | 106/106 | 0.15 | social connectors (manifests, gated publish, 6 tasks) |
 | 2026-10-01 | 121 | 100/100 | 0.15 | fortify round (indexes, invariants, sentinel x19) |
 | 2026-10-01 | 116 | 100/100 | 0.15 | learned memory (factors, dedup, tiers, feedback) |

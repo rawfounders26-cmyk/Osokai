@@ -29,7 +29,7 @@ TOOL_KEYWORDS = {
     "loop_due": ["due", "overdue", "pending", "loop", "loops", "open loops"],
     "bill_group": ["group", "flatmates", "roommates", "friends", "create group"],
     "bill_groups": ["groups", "list groups"],
-    "bill_expense": ["split", "expense", "dinner", "bill", "paid", "share"],
+    "bill_expense": ["split", "expense", "dinner", "bill", "paid", "share", "flatmates", "collect", "upi", "roommates"],
     "bill_balances": ["balance", "who owes", "owes", "debts", "ledger"],
     "bill_settle": ["settle", "paid back", "clear dues", "paid"],
     "wardrobe_add": ["add", "wardrobe", "shirt", "buy clothes"],
@@ -49,7 +49,12 @@ TOOL_KEYWORDS = {
     "web_search": ["search", "find", "look up", "google"],
     "profile_get": ["who am i", "my details", "my budget", "my city"],
     "social_draft": ["post", "tweet", "share on", "publish", "announce", "linkedin", "social"],
-    "social_publish": ["post", "tweet", "publish live", "share on", "announce"],}
+    "social_publish": ["post", "tweet", "publish live", "share on", "announce"],
+    "telegram_send": ["telegram", "tg", "message", "text someone"],
+    "whatsapp_send": ["whatsapp", "wa", "message"],
+    "razorpay_order": ["razorpay", "order", "collect payment", "upi collect"],
+    "github_read": ["github", "repo", "issues", "pull request", "ci", "actions"],
+    "calendar_invite": ["invite", "attendees", "meeting with"],}
 
 MAX_TOOLS = 18
 

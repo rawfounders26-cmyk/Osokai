@@ -20,6 +20,16 @@ PROVIDERS = {
           "auth_kind": "token", "hint": "Set X_BEARER_TOKEN in backend/.env, or paste via POST /connectors/x/connect {token:...}"},
     "linkedin": {"name": "LinkedIn", "color": "#0A66C2", "open_url": "https://linkedin.com",
                  "auth_kind": "token", "hint": "Set LINKEDIN_ACCESS_TOKEN in backend/.env, or paste via POST /connectors/linkedin/connect {token:...}"},
+    "telegram": {"name": "Telegram", "color": "#229ED9", "open_url": "https://telegram.org",
+                 "auth_kind": "token", "hint": "Message @BotFather for a bot token, then POST /connectors/telegram/connect {token:...}"},
+    "github": {"name": "GitHub", "color": "#24292F", "open_url": "https://github.com",
+               "auth_kind": "token", "hint": "Paste a fine-grained PAT (repo+actions:read) via POST /connectors/github/connect {token:...} or set GITHUB_TOKEN"},
+    "razorpay": {"name": "Razorpay", "color": "#3395FF", "open_url": "https://razorpay.com",
+                 "auth_kind": "token", "hint": "Paste {\"key_id\":...,\"secret\":...} JSON via POST /connectors/razorpay/connect {token:...} or set RAZORPAY_KEY_ID/SECRET"},
+    "whatsapp_business": {"name": "WhatsApp Business", "color": "#25D366", "open_url": "https://business.whatsapp.com",
+                          "auth_kind": "token", "hint": "Paste access token via POST /connectors/whatsapp_business/connect {token:...} + set WHATSAPP_PHONE_ID"},
+    "youtube": {"name": "YouTube", "color": "#FF0000", "open_url": "https://youtube.com",
+                "auth_kind": "none", "hint": "Public RSS reads need no key — just ask for a channel"},
     "slack": {"name": "Slack", "color": "#4A154B", "open_url": "https://slack.com/signin",
               "auth_kind": "oauth", "hint": "Add SLACK_CLIENT_ID in backend/.env for real OAuth; MVP accepts pasted token via /connect"},
 }
@@ -100,6 +110,8 @@ def auth_url(cid: str, device: str = "unknown"):
 def connect(cid: str, payload: dict):
     if cid not in PROVIDERS:
         return {"ok": False, "error": "unknown connector"}
+    if PROVIDERS[cid].get("auth_kind") == "none":
+        return {"ok": True, "id": cid, "connected": True, "note": "no credentials needed"}
     token = (payload.get("token") or payload.get("code") or "").strip()
     if not token:
         return {"ok": False, "error": "token/code required"}

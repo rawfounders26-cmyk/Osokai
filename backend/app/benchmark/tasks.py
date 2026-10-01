@@ -8,7 +8,7 @@ budget): run through the agent loop, record success/steps/cost/interventions.
 import re
 
 CATEGORIES = ("browser", "research", "email_calendar", "coding", "personal",
-              "bills", "wardrobe", "social", "long_running")
+              "bills", "wardrobe", "social", "connectors", "long_running")
 
 # (id, category, prompt, expected tools (any-of), approval expected?)
 TASKS = [
@@ -112,6 +112,20 @@ TASKS = [
 ("s04", "social", "Show my recent social posts", ["social_draft"], False),
 ("s05", "social", "Announce the Diwali sale mock", ["social_draft"], True),
 ("s06", "social", "Which platform fits a hiring update, LinkedIn or X", ["social_draft"], False),
+# --- connectors tier-1 (6) ---
+("n01", "connectors", "Text mom on Telegram that I am running late", ["telegram_send"], True),
+("n02", "connectors", "Show open issues for my main repo", ["github_read"], False),
+("n03", "connectors", "Is my repo CI green on main", ["github_read"], False),
+("n04", "connectors", "When am I free tomorrow for an hour", ["cal_list"], False),
+("n05", "connectors", "Invite Priya to lunch Friday with an email", ["calendar_invite"], True),
+("n06", "connectors", "List my GitHub repos", ["github_read"], False),
+# --- connectors tier-2 (6) ---
+("m01", "connectors", "Collect ₹500 from flatmates over UPI", ["bill_expense"], True),
+("m02", "connectors", "WhatsApp mom that I am running late", ["whatsapp_send"], True),
+("m03", "connectors", "Latest videos from my favorite tech channel", ["web_search"], False),
+("m04", "connectors", "Create a receipt draft for 2000", ["write_file"], False),
+("m05", "connectors", "Remind me to pay the electricity bill", ["loop_add"], False),
+("m06", "connectors", "Research how to automate bill collection", ["research"], False),
 # --- long_running (14) ---
 ("l01", "long_running", "Track Samsung M35 price for 30 days and alert on drops", ["loop_add", "web_search"], False),
 ("l02", "long_running", "Monitor my startup competitors and brief me weekly", ["research", "loop_add"], False),

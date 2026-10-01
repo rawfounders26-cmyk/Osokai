@@ -1,5 +1,11 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## connectors tier-1 + tier-2 — ✅ DONE: 12 providers, chat-driven, approval-gated
+- [x] **Tier-1**: Telegram (send + inbound poll worker), calendar depth (free-busy, conflicts, invites with drafted emails), GitHub (repos/issues/CI/brief).
+- [x] **Tier-2**: Razorpay orders (dispatcher-bound, exact amount) + no-creds UPI collect links, WhatsApp Business sends, YouTube RSS reads (live, no key) — verified with real videos.
+- [x] Provider rows on the existing Connectors screen; chat intents + registry + verify + capabilities + 12 battery tasks + mobile wrappers. Battery 112→118, plan back to 100/100.
+- [x] Evals caught 5 real bugs (dispatch gating hole, httpx `.ok`, Tamil clash, rule order, syntax) — all fixed pre-ship.
+
 ## social connectors — ✅ DONE: our own design (patterns only, zero foreign code)
 - [x] `app/social.py`: manifests (mock/x/linkedin), idempotent publishes, per-destination outcomes, vault+env token bridge.
 - [x] Chat `post … on <platform>` → draft + dispatcher-bound approval → approve → posts exactly once. Approval resolves through the F19 gate (`resolve-then-execute`).
@@ -170,5 +176,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 124 nightly evals gating every release — reliability story.
+- 131 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.
