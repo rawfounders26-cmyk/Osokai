@@ -121,6 +121,17 @@ def _insert_tree(db, title, source, spec):
                         db.execute("INSERT INTO subtasks(tid, title, pos) VALUES(?,?,?)",
                                    (tid, str(stitle).strip()[:300], si))
     db.commit()
+    try:
+        from app.context.normalizers import goal_created
+    except ImportError:
+        try:
+            from context.normalizers import goal_created
+        except ImportError:
+            goal_created = lambda *a: None
+    try:
+        goal_created(gid, title, source)
+    except Exception:
+        pass
     return gid
 
 
@@ -208,6 +219,18 @@ def set_task(tid: int, status: str, result: str = ""):
     db = _db()
     db.execute("UPDATE gtasks SET status=?, result=? WHERE id=?", (status, result[:2000], tid))
     db.commit()
+    if status in ("done", "failed"):
+        try:
+            from app.context.normalizers import task_done, task_failed
+        except ImportError:
+            try:
+                from context.normalizers import task_done, task_failed
+            except ImportError:
+                task_done = task_failed = lambda *a: None
+        try:
+            (task_done if status == "done" else task_failed)(tid)
+        except Exception:
+            pass
     return {"ok": True}
 
 

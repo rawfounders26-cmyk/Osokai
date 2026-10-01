@@ -68,6 +68,17 @@ def add_expense(gid: int, title: str, amount: float, paid_by: str, splits: dict)
     for who, share in splits.items():
         db.execute("INSERT INTO bill_splits(eid, who, share) VALUES(?,?,?)", (eid, who, float(share)))
     db.commit()
+    try:
+        from app.context.normalizers import expense_added
+    except ImportError:
+        try:
+            from context.normalizers import expense_added
+        except ImportError:
+            expense_added = lambda *a: None
+    try:
+        expense_added(eid, title, float(amount))
+    except Exception:
+        pass
     return {"ok": True, "id": eid}
 
 def balances(gid: int):

@@ -30,7 +30,19 @@ def add(title: str, day: str, time_: str = "", note: str = ""):
     cur = db.execute("INSERT INTO cal_events(title, day, time, ts, note) VALUES(?,?,?,?,?)",
                      (title, day, time_, ts, note))
     db.commit()
-    return {"ok": True, "id": cur.lastrowid, "when": f"{day} {time_}".strip()}
+    eid = cur.lastrowid
+    try:
+        from app.context.normalizers import calendar_created
+    except ImportError:
+        try:
+            from context.normalizers import calendar_created
+        except ImportError:
+            calendar_created = lambda *a: None
+    try:
+        calendar_created(eid, title, day)
+    except Exception:
+        pass
+    return {"ok": True, "id": eid, "when": f"{day} {time_}".strip()}
 
 def list_all(day: str = ""):
     db = _db()

@@ -28,6 +28,17 @@ def add(kind: str, title: str, source: str = "chat", due: float = 0, repeat: str
     cur = db.execute("INSERT INTO loops(kind, title, source, due, repeat, status, created) VALUES(?,?,?,?,?,?,?)",
                      (kind or "promise", title, source, due, repeat, "open", time.time()))
     db.commit()
+    try:
+        from app.context.normalizers import loop_opened
+    except ImportError:
+        try:
+            from context.normalizers import loop_opened
+        except ImportError:
+            loop_opened = lambda *a: None
+    try:
+        loop_opened(cur.lastrowid, title)
+    except Exception:
+        pass
     return {"ok": True, "id": cur.lastrowid}
 
 def list_loops(status: str = ""):
@@ -54,6 +65,17 @@ def close(lid: int):
     else:
         db.execute("UPDATE loops SET status='done', closed=? WHERE id=?", (time.time(), lid))
     db.commit()
+    try:
+        from app.context.normalizers import loop_closed
+    except ImportError:
+        try:
+            from context.normalizers import loop_closed
+        except ImportError:
+            loop_closed = lambda *a: None
+    try:
+        loop_closed(lid)
+    except Exception:
+        pass
     return {"ok": True, "id": lid}
 
 def close_by_title(text: str):

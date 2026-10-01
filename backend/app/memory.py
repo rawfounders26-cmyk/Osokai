@@ -97,7 +97,19 @@ class Memory:
                 "INSERT INTO approvals(message, device, status, kind, item, ts, reply) VALUES(?,?,?,?,?,?,?)",
                 (message, device, "pending", kind, item, time.time(), ""))
             self.db.commit()
-            return cur.lastrowid
+            aid = cur.lastrowid
+        try:
+            from app.context.normalizers import approval_requested
+        except ImportError:
+            try:
+                from context.normalizers import approval_requested
+            except ImportError:
+                approval_requested = lambda *a: None
+        try:
+            approval_requested(aid, message)
+        except Exception:
+            pass
+        return aid
 
     def approval_get(self, aid):
         r = self.db.execute("SELECT id, message, device, status, kind, item, ts, reply FROM approvals WHERE id=?",
@@ -113,6 +125,17 @@ class Memory:
             self.db.execute("UPDATE approvals SET status=?, reply=? WHERE id=? AND status='pending'",
                             ("allowed" if allow else "denied", reply, aid))
             self.db.commit()
+        try:
+            from app.context.normalizers import approval_resolved
+        except ImportError:
+            try:
+                from context.normalizers import approval_resolved
+            except ImportError:
+                approval_resolved = lambda *a: None
+        try:
+            approval_resolved(aid, "allowed" if allow else "denied")
+        except Exception:
+            pass
         return self.approval_get(aid)
 
     @staticmethod

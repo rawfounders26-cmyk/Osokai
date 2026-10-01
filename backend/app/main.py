@@ -2146,3 +2146,10 @@ async def ws_sync(ws: WebSocket):
     except Exception as e:
         print(f"ws error {type(e).__name__}: {e}", flush=True)
         hub.drop(ws)
+
+# ---- context router: event bus + snapshot + wake conditions (one include, not 7 endpoints) ----
+try:
+    from app.context.api import router as _ctx_router
+except ImportError:
+    from context.api import router as _ctx_router
+app.include_router(_ctx_router)

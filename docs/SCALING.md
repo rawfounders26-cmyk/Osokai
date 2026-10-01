@@ -1,5 +1,12 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## context engine — ✅ DONE: event bus + snapshot + wake conditions (no new screens)
+- [x] `app/context/events.py`: normalized bus (19 types), validated emit, indexed list. Emitters in goals/loops/approvals/calendar/bills/tasks (lazy, guarded, never-raise).
+- [x] `app/context/store.py`: on-demand world snapshot (goals, approvals, loops, today, events, spend) + one-paragraph brief for prompts.
+- [x] `app/context/wake.py`: stored WHEN-event-THEN conditions (nudge/loop/schedule), match filters, consume-once firing inside the proactive tick. Verified live: chat loop → event → wake → nudge.
+- [x] `app/context/api.py` router (7 endpoints, one include — monolith rule honored) + mobile wrappers.
+- [x] Fixed real test-pollution trap along the way (dual `app.*` vs top-level modules now patched both ways in evals).
+
 ## hierarchy STEP 4 — ✅ DONE: planner pack + 60-example battery (quality compounds)
 - [x] `app/planner_pack.py`: all 60 examples as data (goal-title-weighted retrieval, few-shot `compile_prompt`, vault/approval hard rules).
 - [x] `goal-planner` skill pack: decomposition doctrine for the router.
@@ -83,5 +90,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 68 nightly evals gating every release — reliability story.
+- 72 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

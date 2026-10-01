@@ -818,3 +818,81 @@ def test_compile_prompt_injects_examples():
     assert "Objective:" in p and "Prepare my company for a fundraising meeting." in p
     assert "vault" in p and "approval" in p  # hard rules always present
     assert p.rstrip().endswith("Prepare my company for fundraising.")
+
+# ---- context engine evals: bus, wake-once, normalizers, snapshot ----
+
+def _patch_both(monkeypatch, modname, attr, val):
+    """Dual-module trap: `app.X` and `X` are distinct objects in pytest — patch both."""
+    import sys as _sys
+    import importlib as _il
+    for key in (modname, "app." + modname):
+        try:
+            m = _il.import_module(key)
+        except ImportError:
+            continue
+        if hasattr(m, attr):
+            monkeypatch.setattr(m, attr, val)
+    # wake._fire writes nudges via proactive — keep that copy isolated too
+    if modname == "context.wake":
+        for key in ("proactive", "app.proactive"):
+            try:
+                m = _il.import_module(key)
+            except ImportError:
+                continue
+            if hasattr(m, "DB"):
+                monkeypatch.setattr(m, "DB", val if str(val).endswith(".db") else val)
+
+
+def test_event_bus_validate_and_list(tmp_path, monkeypatch):
+    from context import events
+    _patch_both(monkeypatch, "context.events", "DB", str(tmp_path / "ev.db"))
+    assert events.emit("nope", {})["ok"] is False
+    assert events.emit("goal.created", {"id": 1, "title": "G"})["ok"] is True
+    assert events.emit("goal.created", {"x": object()})["ok"] is False  # not serializable
+    rows = events.list_events("goal.created")
+    assert len(rows) == 1 and rows[0]["payload"]["title"] == "G"
+    assert events.latest("loop.due") is None
+
+
+def test_wake_fires_once(tmp_path, monkeypatch):
+    from context import events, wake
+    _patch_both(monkeypatch, "context.events", "DB", str(tmp_path / "ev2.db"))
+    _patch_both(monkeypatch, "context.wake", "DB", str(tmp_path / "w2.db"))
+    assert wake.add("bad", "nope", "nudge")["ok"] is False
+    assert wake.add("bad2", "goal.created", "explode")["ok"] is False
+    c = wake.add("announce goals", "goal.created", "nudge", {}, {"text": "new goal!"})
+    assert c["ok"]
+    events.emit("goal.created", {"id": 9, "title": "Nine"})
+    first = wake.check()
+    assert len(first) == 1 and "fired" in first[0]
+    assert wake.check() == []  # consumed: never double-fires
+    wake.set_enabled(c["id"], False)
+    assert wake.list_conditions()[0]["enabled"] is False
+    wake.remove(c["id"])
+    assert wake.list_conditions() == []
+
+
+def test_normalizers_emit_on_actions(tmp_path, monkeypatch):
+    import loops
+    import memory
+    from context import events
+    monkeypatch.setattr(loops, "DB", str(tmp_path / "n3.db"))
+    monkeypatch.setattr(memory, "DB", str(tmp_path / "n4.db"))
+    _patch_both(monkeypatch, "context.events", "DB", str(tmp_path / "ev3.db"))
+    lid = loops.add("promise", "probe loop", "test")["id"]
+    assert loops.close(lid)["ok"] is True
+    m = memory.Memory()
+    aid = m.approval_create("probe approval", "test")
+    m.approval_resolve(aid, True, "ok")
+    types = {e["type"] for e in events.list_events(limit=50)}
+    assert {"loop.opened", "loop.closed", "approval.requested", "approval.resolved"} <= types
+
+
+def test_snapshot_shape(tmp_path, monkeypatch):
+    import memory
+    from context import events, store
+    _patch_both(monkeypatch, "context.events", "DB", str(tmp_path / "ev4.db"))
+    monkeypatch.setattr(memory, "DB", str(tmp_path / "n5.db"))
+    s = store.snapshot()
+    assert set(s) >= {"goals", "approvals", "loops_due", "today", "recent_events", "spend", "ts"}
+    assert isinstance(store.brief(), str)

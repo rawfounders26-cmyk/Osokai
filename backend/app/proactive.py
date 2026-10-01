@@ -113,6 +113,17 @@ def _tick() -> int:
             if g["progress"] == 0 and nudge("goal_stalled", f"goal:{g['id']}",
                                             f"Goal '{g['title']}' hasn't moved — run the next task?"):
                 made += 1
+                try:
+                    from app.context.normalizers import goal_stalled
+                except ImportError:
+                    try:
+                        from context.normalizers import goal_stalled
+                    except ImportError:
+                        goal_stalled = lambda *a: None
+                try:
+                    goal_stalled(g["id"], g["title"])
+                except Exception:
+                    pass
     except Exception:
         pass
     try:
@@ -160,6 +171,14 @@ async def loop():
     while True:
         try:
             made = await asyncio.to_thread(_tick)
+            try:
+                from app.context.normalizers import sync_inbox
+                from app.context.wake import check as _wake_check
+            except ImportError:
+                from context.normalizers import sync_inbox
+                from context.wake import check as _wake_check
+            made += await asyncio.to_thread(sync_inbox)
+            made += len(await asyncio.to_thread(_wake_check))
             now = datetime.datetime.now()
             if now.hour >= BRIEF_HOUR and _briefing_due():
                 if await asyncio.to_thread(_push_briefing):

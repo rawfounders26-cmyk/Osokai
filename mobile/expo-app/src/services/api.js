@@ -413,6 +413,11 @@ export const handoffCreate = (gid, from_device, to_device) => post('/handoff/cre
 export const handoffPending = (device) => get(`/handoff/pending?device=${encodeURIComponent(device)}`).then(j => j.pending || []);
 export const handoffAccept = (hid, device) => post(`/handoff/${hid}/accept`, { device });
 export const slmFetch = (url) => post('/slm/fetch', { url });
+
+// context engine surfaces
+export const ctxEvents = (limit = 20) => get(`/context/events?limit=${limit}`).then(j => j.events || []);
+export const ctxSnapshot = () => get('/context/snapshot');
+export const wakeList = () => get('/context/wake').then(j => j.conditions || []);
 // live sync: one socket per app session, backoff reconnect, heartbeat-safe
 let syncSock = null;
 let syncDelay = 5000;
