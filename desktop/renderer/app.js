@@ -188,14 +188,22 @@ async function loadVault() {
       row.appendChild(nm); row.appendChild(pol); row.appendChild(dom); vb.appendChild(row);
     });
   } catch (e) { vb.textContent = e.message; }
-  // audit log
+  // audit log (F27: DOM nodes + textContent — audit fields can originate from API callers)
   const ab = document.getElementById('audit-rows');
   try {
     const j = await pfetch('/vault/audit?limit=15');
-    ab.innerHTML = (j.audit || []).map(a => {
+    ab.innerHTML = '';
+    for (const a of (j.audit || [])) {
       const t = new Date(a.ts * 1000).toLocaleTimeString();
-      return `<div>${a.allowed ? '✓' : '✕'} ${a.key} · ${a.domain || '-'} · ${a.device} · ${a.reason} · ${t}</div>`;
-    }).join('') || 'no accesses yet';
+      const div = document.createElement('div');
+      const mark = document.createElement('span');
+      mark.textContent = (a.allowed ? '✓' : '✕') + ' ';
+      div.appendChild(mark);
+      div.appendChild(document.createTextNode(
+        `${a.key} · ${a.domain || '-'} · ${a.device} · ${a.reason} · ${t}`));
+      ab.appendChild(div);
+    }
+    if (!ab.hasChildNodes()) ab.textContent = 'no accesses yet';
   } catch (e) { ab.textContent = e.message; }
 }
 document.getElementById('lockbtn').onclick = async () => {

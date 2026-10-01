@@ -50,10 +50,15 @@ def can(tid: int, user: str, action: str) -> bool:
 
 
 def set_role(tid: int, admin: str, user: str, role: str) -> dict:
+    """Organizational labels for single-owner use (F16): roles gate UI/API actions,
+    they are NOT personal isolation — everyone shares one owner token. Owner
+    transitions are locked: only the owner grants owner, nobody demotes the owner."""
     if role not in ROLES:
         return {"ok": False, "error": "bad role"}
     if not can(tid, admin, "manage"):
         return {"ok": False, "error": "admin only"}
+    if role == "owner" and role_of(tid, admin) != "owner":
+        return {"ok": False, "error": "only the owner grants owner"}
     if role_of(tid, user) == "owner" and role != "owner":
         return {"ok": False, "error": "cannot demote the owner"}
     db = _db()
@@ -110,6 +115,10 @@ def add_member(tid: int, user: str, role: str = "member") -> dict:
     db = _db()
     if not db.execute("SELECT 1 FROM teams WHERE id=?", (tid,)).fetchone():
         return {"ok": False, "error": "no such team"}
+    if role not in ROLES:
+        return {"ok": False, "error": "bad role"}
+    if role == "owner":
+        return {"ok": False, "error": "owner is set at team creation only"}
     db.execute("INSERT OR REPLACE INTO team_members(team, user, role, ts) VALUES(?,?,?,?)",
                (tid, user[:120], role, time.time()))
     db.commit()

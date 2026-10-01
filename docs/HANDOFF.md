@@ -4,7 +4,7 @@
 > until merchant-services building starts. Conversations are RAM; this file is disk.
 
 ## Where we are
-- **Version**: v0.6.0 + hardening + hygiene + hierarchy steps 1–4 COMPLETE + context engine + memory package + policy engine + capability router + benchmark harness + persistent specialists. **Tests**: 86/86 green. **Benchmark**: plan 100/100, avg interventions 0.15/goal.
+- **Version**: v0.6.0 + hardening + hygiene + hierarchy steps 1–4 COMPLETE + context engine + memory package + policy engine + capability router + benchmark harness + persistent specialists + review batch 1. **Tests**: 95/95 green. **Benchmark**: plan 100/100, avg interventions 0.15/goal.
 - **Last shipped**: hardening (no features) — recurring double-post fix, shared WAL DB helper,
   thread-safe memory, secrets audit clean, deep health, input clamps, 3 hardening evals.
 - **Before that**: v0.6 platform · v0.5 · v0.4.x (outfit + bills, mobile screens, cloud pack) ·
@@ -61,6 +61,8 @@
 #    cross-device handoff, SLM weights drop-in, merchant-services Phase 1.
 
 ## Session log
+- 2026-10-01: code-review batch 1 shipped (F01–F03, F13–F16, F19, F26–F29; 9 new evals,
+  live verified incl. v3 envelopes + placeholder refusal) → 95 tests. Next: batch 2 (data loss).
 - 2026-10-01: persistent specialists shipped (identity + triggers + tick + seed trio,
   7 endpoints, 2 evals, live verified) → 86 tests. Reference plan complete except
   browser sub-agent, computer-use, cloud always-on, model training.

@@ -11,15 +11,26 @@ WS = _pws()
 
 def _open(name: str):
     from PIL import Image
-    fp = os.path.normpath(os.path.join(WS, name))
-    if not fp.startswith(WS) or not os.path.isfile(fp):
+    try:
+        from app.paths import safe_join as _sj
+    except ImportError:
+        from paths import safe_join as _sj
+    try:
+        fp = _sj(name)
+    except ValueError:
+        raise ValueError(f"not in workspace: {name}")
+    if not os.path.isfile(fp):
         raise ValueError(f"not in workspace: {name}")
     img = Image.open(fp)
     img.load()
     return img, fp
 
 def _save(img, name: str, quality: int = 85):
-    fp = os.path.join(WS, name)
+    try:
+        from app.paths import safe_join as _sj
+    except ImportError:
+        from paths import safe_join as _sj
+    fp = _sj(name)
     kw = {"quality": quality, "optimize": True} if fp.lower().endswith((".jpg", ".jpeg")) else {}
     img.save(fp, **kw)
     return fp

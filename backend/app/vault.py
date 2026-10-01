@@ -3,7 +3,7 @@ AES-128 Fernet. Key lives ONLY in backend/.env (OSOKAI_VAULT_KEY), never leaves 
 Values are decrypted in memory solely to fill platform fields after user approval."""
 import base64
 import os
-
+import re
 from cryptography.fernet import Fernet, InvalidToken
 
 try:
@@ -102,6 +102,22 @@ def secret_policy(key: str, policy: str = "", domains=None):
     e = d[key]
     return {"ok": True, "key": key, "policy": e["policy"], "domains": e["domains"]}
 
+def _norm_host(domain: str) -> str:
+    """Lowercase hostname without scheme/port/path. Empty string stays empty (= denied)."""
+    d = (domain or "").strip().lower()
+    d = re.sub(r"^[a-z][a-z0-9+.-]*://", "", d)
+    d = d.split("/")[0].split("?")[0].split("#")[0]
+    if "@" in d:
+        d = d.rsplit("@", 1)[1]
+    d = d.split(":")[0].strip().strip(".")
+    return d
+
+
+def _domain_allowed(host: str, allowed: list) -> bool:
+    if not host or not allowed:
+        return False  # empty domain never bypasses; unrestricted handled by caller
+    return any(host == a or host.endswith("." + a) for a in allowed)
+
 def secret_fill(key: str, domain: str = "", device: str = "?") -> str:
     """Decrypt for field entry — the single enforcement gate.
     Checks policy -> lock -> domain, then writes the audit row."""
@@ -117,8 +133,8 @@ def secret_fill(key: str, domain: str = "", device: str = "?") -> str:
     if pol == "while-unlocked" and not is_unlocked():
         _audit(key, domain, device, False, "locked")
         raise PermissionError("vault locked — unlock first")
-    allowed = [x.lower() for x in (e.get("domains") or [])]
-    if domain and allowed and not any(domain.lower().endswith(x) for x in allowed):
+    allowed = [x.lower().strip().strip(".") for x in (e.get("domains") or []) if str(x).strip()]
+    if allowed and not _domain_allowed(_norm_host(domain), allowed):
         _audit(key, domain, device, False, "domain denied")
         raise PermissionError(f"{key} not allowed on {domain}")
     val = decrypt(e["enc"])

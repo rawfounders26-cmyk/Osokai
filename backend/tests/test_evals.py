@@ -375,7 +375,8 @@ def test_e2e_server_blind_roundtrip(tmp_path, monkeypatch):
     blob = pulled[0]["envelope"]["ct"]
     assert "meet at 8" not in blob  # server-blind ciphertext
     opened = e2e.open_envelope(desk["private"], pulled[0]["envelope"])
-    assert opened == {"from": "phone", "payload": {"text": "meet at 8"}}
+    assert opened["from"] == "phone" and opened["payload"] == {"text": "meet at 8"}
+    assert opened["sender_authenticated"] is False  # v2: confidential only
     assert e2e.pull_envelopes("desk") == []
 
 
@@ -1099,3 +1100,162 @@ def test_specialists_wake_link_and_seed(tmp_path, monkeypatch):
     assert s["ok"] and set(s["seeded"]) == {"Researcher", "Watcher", "Scheduler"}
     assert len(specialists.list_specialists()) == 3
     assert specialists.seed()["seeded"] == []  # idempotent
+
+# ---- code-review batch 1 evals: trust boundary fixes ----
+
+def test_f01_placeholder_tokens_rejected():
+    import sys as _s
+    _s.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+    import main as _m
+    assert _m._is_placeholder_token("paste-osokai-token-here")
+    assert _m._is_placeholder_token("short")
+    assert _m._is_placeholder_token("")
+    assert not _m._is_placeholder_token("osokai_" + "A" * 32)
+
+
+def test_f02_shell_no_interp(tmp_path, monkeypatch):
+    import dev
+    monkeypatch.setattr(dev, "WS", str(tmp_path))
+    r = dev.shell("echo hi; touch /tmp/pwned")
+    assert "blocked" in r
+    assert "blocked" in dev.shell("echo $(whoami)")
+    assert "blocked" in dev.shell("python -c \"import os\"")
+    assert "blocked" in dev.shell("evilprog --x")
+    assert "blocked" in dev.shell("git status --x; echo hi")
+    assert "blocked" in dev.shell("echo ../../evil")
+    r = dev.shell("echo hello")
+    assert "hello" in r  # legit still works
+    import subprocess as _sp
+    _src = open(dev.__file__).read()
+    assert "shell=False" in _src and "run(argv, shell=False" in _src
+    assert ", shell=True" not in _src and "(c, shell=True" not in _src
+
+
+def test_f03_vault_domains(tmp_path, monkeypatch):
+    import vault
+    monkeypatch.setattr(vault, "_read_store", lambda: {"k": {"enc": vault.encrypt("s3cr3t") if hasattr(vault, "encrypt") else "", "policy": "always", "domains": ["shop.com"]}})
+    try:
+        vault.secret_fill("k", "", "t")
+        assert False, "empty domain must not bypass"
+    except PermissionError:
+        pass
+    try:
+        vault.secret_fill("k", "evilshop.com", "t")
+        assert False, "suffix impostor must not pass"
+    except PermissionError:
+        pass
+    assert vault.secret_fill("k", "https://pay.shop.com/cart", "t") == "s3cr3t"
+    assert vault.secret_fill("k", "shop.com", "t") == "s3cr3t"
+
+
+def test_f13_e2e_sender_auth(tmp_path, monkeypatch):
+    import e2e
+    monkeypatch.setattr(e2e, "DB", str(tmp_path / "e3.db"))
+    a, b, evil = e2e.generate_keypair(), e2e.generate_keypair(), e2e.generate_keypair()
+    aid, bid = e2e.generate_identity(), e2e.generate_identity()
+    assert e2e.register("a", a["public"], aid["public"])["ok"]
+    assert e2e.register("bad", "short")["ok"] is False  # length validated
+    assert e2e.register("a", b["public"])["ok"] is False  # silent overwrite refused
+    assert e2e.register("a", b["public"], replace=True)["ok"] is True
+    e2e.register("a", a["public"], aid["public"], replace=True)
+    env = e2e.seal_to(a["private"], b["public"], "a", {"m": 1}, aid["private"])
+    assert env["v"] == 3
+    opened = e2e.open_envelope(b["private"], env)
+    assert opened["sender_authenticated"] is True and opened["from"] == "a"
+    # attacker with valid keys claims to be someone else
+    forgery = e2e.seal_to(evil["private"], b["public"], "a", {"m": 1}, e2e.generate_identity()["private"])
+    try:
+        e2e.open_envelope(b["private"], forgery, aid["public"])
+        assert False, "forgery must be rejected"
+    except ValueError:
+        pass
+    assert e2e.push_envelope("b", {"v": 3, "ct": "x"})["ok"] is False  # unsigned v3 rejected
+
+
+def test_f14_safe_join_jail(tmp_path):
+    import sys as _s
+    _s.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+    from paths import safe_join, ws
+    base = ws()
+    assert safe_join("a/b.md").startswith(base)
+    for evil in ("../evil", "../../etc/passwd", "/abs", "a/../../x"):
+        try:
+            safe_join(evil)
+            assert False, f"must jail: {evil}"
+        except ValueError:
+            pass
+
+
+def test_f15_share_key_separation(tmp_path, monkeypatch):
+    import share
+    import base64 as _b
+    ws = str(tmp_path)
+    monkeypatch.setattr(share, "WS", ws)
+    monkeypatch.setattr(share, "SHARED", ws + "/shared")
+    monkeypatch.setattr(share, "INBOX", ws + "/inbox")
+    open(ws + "/note.txt", "w").write("hello share")
+    r = share.export_bundle(["note.txt"], "t")
+    assert r["ok"] and "key" in r and "code" not in r
+    assert r["key"] not in r["file"]  # key not derivable from filename
+    blob = open(ws + "/" + r["file"], "rb").read()
+    ok = share.import_bundle(r["file"], _b.b64encode(blob).decode(), key=r["key"])
+    assert ok["ok"] and "note.txt" in ok["imported"] and all(".." not in n for n in ok["imported"])
+    assert share.import_bundle(r["file"], _b.b64encode(blob).decode(), code="ABCDEF")["ok"] is False
+    assert share.import_bundle(r["file"], "!!!", key=r["key"])["ok"] is False
+
+
+def test_f16_owner_lock(tmp_path, monkeypatch):
+    import teams
+    monkeypatch.setattr(teams, "DB", str(tmp_path / "t3.db"))
+    t = teams.create_team("acme", owner="ceo")["id"]
+    teams.add_member(t, "cto")
+    assert teams.add_member(t, "mallory", "owner")["ok"] is False
+    assert teams.add_member(t, "mallory", "nobody")["ok"] is False
+    assert teams.set_role(t, "cto", "mallory", "owner")["ok"] is False  # admin cannot grant owner
+    assert teams.set_role(t, "ceo", "cto", "owner")["ok"] is True  # owner can
+
+
+def test_f19_dispatcher_binding(tmp_path, monkeypatch):
+    import memory
+    from policy import dispatch
+    monkeypatch.setattr(memory, "DB", str(tmp_path / "d2.db"))
+    r = dispatch.request("email_draft", {"to": "a@b.c", "subject": "s", "body": "b"}, "test")
+    assert r["ok"] is False and r["waiting"] and r["approval_id"]
+    bad = dispatch.execute_approved(999999, "email_draft", {"to": "a@b.c", "subject": "s", "body": "b"})
+    assert bad["ok"] is False
+    changed = dispatch.execute_approved(r["approval_id"], "email_draft", {"to": "evil@x.y", "subject": "s", "body": "b"})
+    assert changed["ok"] is False and "mismatch" in changed["error"]
+    ok = dispatch.execute_approved(r["approval_id"], "web_search", {"query": "x"})
+    assert ok["ok"] is False  # not granted yet (still pending)
+    m = memory.Memory()
+    m.approval_resolve(r["approval_id"], True, "granted")
+    good = dispatch.execute_approved(r["approval_id"], "email_draft", {"to": "a@b.c", "subject": "s", "body": "b"})
+    assert good["ok"] is True  # exact binding executes
+    again = dispatch.execute_approved(r["approval_id"], "email_draft", {"to": "a@b.c", "subject": "s", "body": "b"})
+    assert again["ok"] is False  # single-use: already resolved
+
+
+def test_f29_marketplace_hardening(tmp_path, monkeypatch):
+    import hashlib as _h
+    import json as _j
+    import marketplace
+    monkeypatch.setenv("OSOKAI_AUTH_TOKEN", "test-key")
+    monkeypatch.setattr(marketplace, "MARKET", str(tmp_path / "mkt"))
+    monkeypatch.setattr(marketplace, "ROLES", str(tmp_path / "roles"))
+    monkeypatch.setattr(marketplace, "DB", str(tmp_path / "m.db"))
+    assert marketplace.uninstall("")["ok"] is False  # never resolves to roles root
+    assert marketplace.uninstall("builtin")["ok"] is False  # not an installed pack
+    assert marketplace.set_enabled("ghost", True)["ok"] is False
+    d = tmp_path / "mkt" / "demo2"
+    d.mkdir(parents=True)
+    body = b"# Demo2\nDo things.\n"
+    (d / "SKILL.md").write_bytes(body)
+    man = {"name": "demo2", "version": "1.0", "description": "d", "perms": [],
+           "sha256": _h.sha256(body).hexdigest()}
+    man["sig"] = marketplace.sign_pack(body, man)
+    (d / "manifest.json").write_text(_j.dumps(man))
+    assert marketplace.verify("demo2")["scheme"] == "v2"
+    assert marketplace.install("demo2")["ok"]
+    assert marketplace.set_enabled("demo2", False)["ok"]
+    assert marketplace.uninstall("demo2")["ok"]
+    assert list((tmp_path / "roles").glob("*")) == []  # only the pack dir removed

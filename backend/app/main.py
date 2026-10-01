@@ -11,10 +11,27 @@ except ImportError:
     from paths import env_file as _env_file
 load_dotenv(_env_file())
 
+PLACEHOLDER_MARKS = ("paste-", "paste_", "example", "changeme", "xxx", "your-", "your_", "todo", "xxx-")
+
+
+def _is_placeholder_token(tok: str) -> bool:
+    t = (tok or "").strip()
+    if len(t) < 20:
+        return True
+    low = t.lower()
+    return any(m in low for m in PLACEHOLDER_MARKS)
+
+
 def _ensure_auth_token():
-    """Packaged app: no open-auth dev mode. Generate once into .env next to the exe."""
-    if os.getenv("OSOKAI_AUTH_TOKEN", ""):
+    """Packaged app: no open-auth dev mode. Generate once into .env next to the exe.
+    Refuses known placeholders and short tokens (F01): fail fast, never serve known creds."""
+    cur = os.getenv("OSOKAI_AUTH_TOKEN", "").strip()
+    if cur and not _is_placeholder_token(cur):
         return
+    if cur and _is_placeholder_token(cur):
+        raise RuntimeError(
+            "OSOKAI_AUTH_TOKEN is a placeholder/short value — refusing to start. "
+            "Run `python scripts/cloud-secrets.py` (regenerates) or set a real token.")
     import secrets as _s
     new = "osokai_" + _s.token_urlsafe(24)
     try:
@@ -784,7 +801,8 @@ async def share_import(payload: dict, _=Depends(need_auth)):
         from app.share import import_bundle
     except ImportError:
         from share import import_bundle
-    r = import_bundle(payload.get("filename", ""), payload.get("content_b64", ""), payload.get("code", ""))
+    r = import_bundle(payload.get("filename", ""), payload.get("content_b64", ""),
+                      payload.get("key", ""), payload.get("code", ""))
     if not r["ok"]:
         raise HTTPException(status_code=422, detail=r["error"])
     await hub.push()
@@ -1386,7 +1404,8 @@ async def e2e_register(payload: dict, _=Depends(need_auth)):
         from app.e2e import register
     except ImportError:
         from e2e import register
-    r = register(payload.get("device", ""), payload.get("pubkey", ""))
+    r = register(payload.get("device", ""), payload.get("pubkey", ""),
+                 payload.get("id_pub", ""), bool(payload.get("replace", False)))
     if not r.get("ok"):
         raise HTTPException(status_code=400, detail=r.get("error", "bad key"))
     await hub.push()

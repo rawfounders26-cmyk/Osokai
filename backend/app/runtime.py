@@ -67,10 +67,14 @@ def is_killed(skill: str) -> bool:
 
 
 def _jail(path: str) -> str:
-    fp = os.path.normpath(os.path.join(WS, path))
-    if not fp.startswith(os.path.normpath(WS) + os.sep) and fp != os.path.normpath(WS):
+    try:
+        from app.paths import safe_join as _sj
+    except ImportError:
+        from paths import safe_join as _sj
+    try:
+        return _sj(path)
+    except ValueError:
         raise PermissionError(f"path escapes workspace jail: {path}")
-    return fp
 
 
 def _audit(skill, action, target, allowed, ms):

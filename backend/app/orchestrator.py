@@ -159,6 +159,13 @@ def _auto_substep(gid: int, tree: dict, task: dict, sub: dict, device: str) -> d
         return {"ok": False, "error": f"no verify engine: {e}"}
     set_subtask(sub["id"], "doing")
     notes = []
+    try:
+        try:
+            from app.policy.dispatch import request as _gate
+        except ImportError:
+            from policy.dispatch import request as _gate
+    except Exception:
+        _gate = lambda *a, **k: {"ok": True, "auto": True}
     for step in propose(sub["title"], task["kind"]):
         # fill blank args from subtask context where the mapping is unambiguous
         args = dict(step.get("args", {}))
@@ -172,6 +179,17 @@ def _auto_substep(gid: int, tree: dict, task: dict, sub: dict, device: str) -> d
             slug = "".join(c if c.isalnum() else "-" for c in sub["title"].lower()).strip("-")[:40] or "note"
             args["path"] = f"{slug}.md"
             args["content"] = args.get("content", "") or f"# {sub['title']}\n"
+        g = _gate(step["action"], args, device)
+        if not g["ok"] and g.get("waiting"):
+            set_subtask(sub["id"], "waiting", f"approval #{g['approval_id']}: {step['action']}")
+            _log(gid, task["id"], "wait", f"{sub['title']} :: approval #{g['approval_id']}")
+            return {"ok": True, "waiting": True, "approval_id": g["approval_id"],
+                    "reply": g.get("reply", f"Paused for approval #{g['approval_id']}.")}
+        if not g["ok"]:
+            set_subtask(sub["id"], "todo", "dispatcher rejected: " + g.get("error", "?")[:300])
+            _log(gid, task["id"], "redo", sub["title"] + " :: dispatcher rejection")
+            return {"ok": True, "redone": True,
+                    "reply": f"Subtask '{sub['title']}' rejected at the approval gate — requeued."}
         r = run_verified({"action": step["action"], "args": args}, device)
         notes.append(f"{step['action']}: {r['evidence'][:120]}")
         if r.get("waiting"):

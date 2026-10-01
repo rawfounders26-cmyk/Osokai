@@ -100,6 +100,10 @@ export async function chat(message) {
     return res.json();
   } catch (e) {
     if (isNetErr(e)) {
+      // F26: never persist likely secrets (OTP codes, passwords, tokens) in the offline queue
+      if (/^\d{4,8}$/.test(message.trim()) || /password|otp|token|secret|api[_-]?key/i.test(message)) {
+        return { reply: '📴 offline — that looks sensitive, so it was NOT queued. Resend when back online.', approval_required: false, queued: false };
+      }
       await enqueue('/chat', body);
       return { reply: '📴 offline — queued, will send when back online.', approval_required: false, queued: true };
     }

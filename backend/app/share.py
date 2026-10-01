@@ -27,16 +27,24 @@ def _key_for(code: str) -> bytes:
 
 
 def _safe_join(*parts: str) -> str:
-    fp = os.path.normpath(os.path.join(*parts))
-    if not fp.startswith(WS):
-        raise ValueError("path escapes workspace")
-    return fp
+    try:
+        from app.paths import safe_join as _sj
+    except ImportError:
+        from paths import safe_join as _sj
+    if parts:
+        return _sj(*parts[1:], root=parts[0])
+    return _sj()
+
+
+MAX_IMPORT_FILES, MAX_IMPORT_BYTES = 200, 50 * 1024 * 1024
 
 
 def export_bundle(paths, note: str = "") -> dict:
-    """Zip + encrypt. Returns share code + bundle filename."""
+    """Zip + encrypt with a fresh random 256-bit key. Filename carries only a
+    random ID — the key travels separately (never derivable from the file)."""
     os.makedirs(SHARED, exist_ok=True)
-    code = "".join(secrets.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(6))
+    key = Fernet.generate_key()
+    bid = "".join(secrets.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(8))
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("osokai-note.txt", note or "")
@@ -49,31 +57,51 @@ def export_bundle(paths, note: str = "") -> dict:
                     for f in files:
                         full = os.path.join(root, f)
                         z.write(full, os.path.relpath(full, WS))
-    token = Fernet(_key_for(code)).encrypt(buf.getvalue())
-    fname = f"osokai-{code}.zip.enc"
+    token = Fernet(key).encrypt(buf.getvalue())
+    fname = f"osokai-{bid}.zip.enc"
     open(os.path.join(SHARED, fname), "wb").write(token)
-    return {"ok": True, "code": code, "file": f"shared/{fname}"}
+    return {"ok": True, "key": key.decode(), "file": f"shared/{fname}"}
 
 
-def import_bundle(filename: str, content_b64: str, code: str) -> dict:
-    """Decrypt with the share code, extract into workspace/inbox/."""
-    raw = base64.b64decode(content_b64.encode())
+def import_bundle(filename: str, content_b64: str, key: str = "", code: str = "") -> dict:
+    """Decrypt with the separate key, extract sanitized relatives into inbox/.
+    Legacy 6-char codes are rejected (re-export under the new scheme)."""
+    if code and not key:
+        return {"ok": False, "error": "legacy share codes retired — ask sender to re-export"}
     try:
-        data = Fernet(_key_for(code)).decrypt(raw)
+        raw = base64.b64decode(content_b64.encode())
     except Exception:
-        return {"ok": False, "error": "wrong code or corrupted bundle"}
+        return {"ok": False, "error": "bad base64"}
+    try:
+        data = Fernet(key.encode()).decrypt(raw)
+    except Exception:
+        return {"ok": False, "error": "wrong key or corrupted bundle"}
     os.makedirs(INBOX, exist_ok=True)
-    names = []
-    with zipfile.ZipFile(io.BytesIO(data)) as z:
-        for n in z.namelist():
-            if n.startswith("/") or ".." in n:
-                continue
-            out = _safe_join(INBOX, os.path.basename(n)) if "/" not in n.rstrip("/") else None
-            if out is None:
-                continue
-            with open(out, "wb") as f:
-                f.write(z.read(n))
-            names.append(os.path.basename(n))
+    names, total = [], 0
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except Exception:
+        return {"ok": False, "error": "not a bundle"}
+    for n in zf.namelist():
+        rel = (n or "").replace("\\", "/").lstrip("/")
+        if not rel or rel.startswith(("/", "..")) or ".." in rel.split("/") or ":" in rel.split("/")[0]:
+            continue
+        if n.endswith("/"):
+            continue
+        if len(names) >= MAX_IMPORT_FILES:
+            break
+        blob = zf.read(n)
+        total += len(blob)
+        if total > MAX_IMPORT_BYTES:
+            break
+        try:
+            out = _safe_join(INBOX, rel)
+        except ValueError:
+            continue
+        os.makedirs(os.path.dirname(out) or INBOX, exist_ok=True)
+        with open(out, "wb") as f:
+            f.write(blob)
+        names.append(rel)
     return {"ok": True, "imported": names, "into": "inbox/"}
 
 

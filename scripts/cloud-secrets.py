@@ -8,8 +8,18 @@ BASE = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "backend")
 ENV = os.path.join(BASE, ".env")
 
 
+PLACEHOLDER_MARKS = ("paste-", "paste_", "example", "changeme", "xxx", "your-", "your_", "todo")
+
+
 def _gen(prefix: str, nbytes: int = 24) -> str:
     return prefix + secrets.token_urlsafe(nbytes)
+
+
+def _bad(v: str) -> bool:
+    v = (v or "").strip()
+    if len(v) < 20:
+        return True
+    return any(m in v.lower() for m in PLACEHOLDER_MARKS)
 
 
 def main() -> None:
@@ -23,16 +33,15 @@ def main() -> None:
             k, v = ln.split("=", 1)
             have[k.strip()] = v.strip()
     changed = False
-    if not have.get("OSOKAI_AUTH_TOKEN"):
-        lines.append(f"OSOKAI_AUTH_TOKEN={_gen('osokai_')}")
-        changed = True
-    if not have.get("OSOKAI_RELAY_KEY"):
-        lines.append(f"OSOKAI_RELAY_KEY={_gen('relay_')}")
-        changed = True
+    for key, prefix in (("OSOKAI_AUTH_TOKEN", "osokai_"), ("OSOKAI_RELAY_KEY", "relay_")):
+        if _bad(have.get(key, "")):
+            lines = [ln for ln in lines if not ln.strip().startswith(key + "=")]
+            lines.append(f"{key}={_gen(prefix)}")
+            changed = True
     if changed:
         with open(ENV, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
-        print(f"secrets written to {ENV} (existing keys untouched)")
+        print(f"secrets written to {ENV} (placeholders replaced, real keys untouched)")
     else:
         print("secrets already present — nothing changed")
 

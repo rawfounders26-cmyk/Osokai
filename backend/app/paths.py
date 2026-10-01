@@ -29,3 +29,13 @@ def ws() -> str:
 
 def env_file() -> str:
     return os.path.join(base(), ".env")
+
+
+def safe_join(*parts: str, root: str = "") -> str:
+    """One path policy for the whole backend (F14): resolved, symlink-aware,
+    jail-contained. Raises ValueError on escape. `root` defaults to workspace."""
+    base_dir = os.path.realpath(root or ws())
+    fp = os.path.realpath(os.path.join(base_dir, *parts))
+    if fp != base_dir and not fp.startswith(base_dir + os.sep):
+        raise ValueError(f"path escapes jail: {'/'.join(parts)}")
+    return fp

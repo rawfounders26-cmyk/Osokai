@@ -54,12 +54,14 @@ _TYPES = {"str": str, "int": int, "float": (int, float), "bool": bool}
 
 def _jail_ok(path: str) -> bool:
     try:
-        from app.paths import ws as _pws
+        from app.paths import safe_join as _sj
     except ImportError:
-        from paths import ws as _pws
-    ws = os.path.normpath(_pws())
-    fp = os.path.normpath(os.path.join(ws, path or ""))
-    return fp == ws or fp.startswith(ws + os.sep)
+        from paths import safe_join as _sj
+    try:
+        _sj(path or "")
+        return True
+    except ValueError:
+        return False
 
 
 def validate(program) -> dict:

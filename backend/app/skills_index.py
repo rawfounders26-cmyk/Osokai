@@ -81,14 +81,29 @@ _ROLE_ALIASES = {
 
 _cache = None
 
+def _disabled_packs() -> set:
+    """Market packs disabled (or uninstalled) must not route. Lazy import: no cycle."""
+    try:
+        try:
+            from app.marketplace import _db as _mdb
+        except ImportError:
+            from marketplace import _db as _mdb
+        rows = _mdb().execute("SELECT name FROM market_installed WHERE enabled=0").fetchall()
+        return {r[0] for r in rows}
+    except Exception:
+        return set()
+
 def _load():
     global _cache
     if _cache is not None:
         return _cache
     reg = {}
     base = os.path.normpath(ROLES)
+    dead = _disabled_packs()
     if os.path.isdir(base):
         for d in sorted(os.listdir(base)):
+            if d in dead:
+                continue
             fp = os.path.join(base, d, "SKILL.md")
             if not os.path.isfile(fp):
                 continue

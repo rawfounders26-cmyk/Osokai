@@ -252,18 +252,21 @@ class Memory:
 
     def list_files(self, sub: str = ""):
         try:
-            base = os.path.normpath(os.path.join(WS, sub))
-            if not base.startswith(WS):
-                return []
-            return sorted(os.listdir(base))
+            try:
+                from app.paths import safe_join as _sj
+            except ImportError:
+                from paths import safe_join as _sj
+            return sorted(os.listdir(_sj(sub)))
         except Exception:
             return []
 
     def list_entries(self, sub: str = ""):
         try:
-            base = os.path.normpath(os.path.join(WS, sub))
-            if not base.startswith(WS):
-                return []
+            try:
+                from app.paths import safe_join as _sj
+            except ImportError:
+                from paths import safe_join as _sj
+            base = _sj(sub)
             out = []
             for n in sorted(os.listdir(base)):
                 out.append({"name": n, "dir": os.path.isdir(os.path.join(base, n))})

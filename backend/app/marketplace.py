@@ -40,8 +40,29 @@ def _key() -> bytes:
     return os.getenv("OSOKAI_AUTH_TOKEN", "osokai-dev").encode()
 
 
-def sign_pack(skill_md: bytes) -> str:
-    return hmac.new(_key(), skill_md, hashlib.sha256).hexdigest()
+def _invalidate_router_cache():
+    try:
+        try:
+            import app.skills_index as _si
+        except ImportError:
+            import skills_index as _si
+        _si._cache = None  # rescan roles dir on next route()
+    except Exception:
+        pass
+
+
+def _canonical_manifest(man: dict) -> str:
+    sub = {k: man.get(k, "") for k in ("name", "version", "description", "perms")}
+    return json.dumps(sub, sort_keys=True, separators=(",", ":"))
+
+
+def sign_pack(skill_md: bytes, manifest: dict = None) -> str:
+    """v2 signature: HMAC over content hash + canonical metadata. Body-only
+    legacy packs still verify (fallback) but new packs must use v2."""
+    if manifest is None:
+        return hmac.new(_key(), skill_md, hashlib.sha256).hexdigest()
+    inner = hashlib.sha256(skill_md).hexdigest() + "\n" + _canonical_manifest(manifest)
+    return hmac.new(_key(), inner.encode(), hashlib.sha256).hexdigest()
 
 
 def _read_pack(name: str):
@@ -64,9 +85,13 @@ def verify(name: str) -> dict:
     body = pack["body"].encode()
     if hashlib.sha256(body).hexdigest() != man.get("sha256", ""):
         return {"ok": False, "error": "checksum mismatch — pack tampered"}
-    if not hmac.compare_digest(sign_pack(body), man.get("sig", "")):
-        return {"ok": False, "error": "bad signature — untrusted publisher"}
-    return {"ok": True, "manifest": man}
+    man_nosig = {k: v for k, v in man.items() if k != "sig"}
+    if hmac.compare_digest(sign_pack(body, man_nosig), man.get("sig", "")):
+        return {"ok": True, "manifest": man, "scheme": "v2"}
+    if hmac.compare_digest(sign_pack(body), man.get("sig", "")):
+        return {"ok": True, "manifest": man, "scheme": "v1-legacy",
+                "warning": "pack uses legacy body-only signature — republish to v2"}
+    return {"ok": False, "error": "bad signature — untrusted publisher"}
 
 
 def list_market():
@@ -121,14 +146,7 @@ def install(name: str, ack_high_risk: bool = False) -> dict:
     db.commit()
     grant(name, v["manifest"].get("perms", []))  # sandbox ledger: declared perms only
     rep = reputation(name)
-    try:
-        try:
-            import app.skills_index as _si
-        except ImportError:
-            import skills_index as _si
-        _si._cache = None  # rescan roles dir on next route()
-    except Exception:
-        pass
+    _invalidate_router_cache()
     out = {"ok": True, "installed": name}
     if rep.get("warn"):
         out["warning"] = f"low publisher rating ({rep['stars']}★) — review the pack before enabling"
@@ -137,16 +155,27 @@ def install(name: str, ack_high_risk: bool = False) -> dict:
 
 def set_enabled(name: str, enabled: bool) -> dict:
     db = _db()
+    if not db.execute("SELECT 1 FROM market_installed WHERE name=?", (name,)).fetchone():
+        return {"ok": False, "error": "not an installed pack"}
     db.execute("UPDATE market_installed SET enabled=? WHERE name=?", (1 if enabled else 0, name))
     db.commit()
+    _invalidate_router_cache()
     return {"ok": True, "name": name, "enabled": enabled}
 
 
 def uninstall(name: str) -> dict:
-    dest = os.path.normpath(os.path.join(ROLES, name))
-    if dest.startswith(ROLES) and os.path.isdir(dest):
-        shutil.rmtree(dest)
+    """Removal only touches exact installed-pack dirs — never built-ins, never roots."""
+    if not name or name.strip() in ("", ".", "..") or "/" in name or "\\" in name:
+        return {"ok": False, "error": "bad pack name"}
     db = _db()
+    row = db.execute("SELECT name FROM market_installed WHERE name=?", (name,)).fetchone()
+    if not row:
+        return {"ok": False, "error": "not an installed market pack — built-ins are protected"}
+    dest = os.path.normpath(os.path.join(ROLES, name))
+    if dest == os.path.normpath(ROLES) or not dest.startswith(os.path.normpath(ROLES) + os.sep):
+        return {"ok": False, "error": "refusing: resolves outside pack dir"}
+    if os.path.isdir(dest):
+        shutil.rmtree(dest)
     db.execute("DELETE FROM market_installed WHERE name=?", (name,))
     db.commit()
     try:
@@ -157,4 +186,5 @@ def uninstall(name: str) -> dict:
         revoke(name)
     except Exception:
         pass
+    _invalidate_router_cache()
     return {"ok": True, "removed": name}

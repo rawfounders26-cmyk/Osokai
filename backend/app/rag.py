@@ -45,8 +45,15 @@ def _chunks(text: str, size: int = 1200, overlap: int = 200):
 
 def ingest(sub: str = "") -> dict:
     """Index all text docs under workspace/[sub]. Re-indexes changed files only."""
-    base = os.path.normpath(os.path.join(WS, sub))
-    if not base.startswith(WS) or not os.path.isdir(base):
+    try:
+        try:
+            from app.paths import safe_join as _sj
+        except ImportError:
+            from paths import safe_join as _sj
+        base = _sj(sub, root=WS)
+    except ValueError:
+        return {"ok": False, "error": "bad path"}
+    if not os.path.isdir(base):
         return {"ok": False, "error": "bad path"}
     db = _db()
     files, chunks = 0, 0

@@ -150,13 +150,15 @@ def test_share_roundtrip(tmp_path, monkeypatch):
     import os as _os
     _os.makedirs(tmp_path, exist_ok=True)
     r = share.export_bundle(["note.txt"])
-    assert r["ok"] and r["code"]
+    assert r["ok"] and r["key"] and "code" not in r
     import base64
     blob = open(tmp_path / "shared" / r["file"].split("/")[-1], "rb").read()
-    back = share.import_bundle(r["file"], base64.b64encode(blob).decode(), r["code"])
-    assert back["ok"] is True
-    bad = share.import_bundle(r["file"], base64.b64encode(blob).decode(), "WRONG1")
+    back = share.import_bundle(r["file"], base64.b64encode(blob).decode(), key=r["key"])
+    assert back["ok"] is True and "note.txt" in back["imported"]
+    bad = share.import_bundle(r["file"], base64.b64encode(blob).decode(), key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
     assert bad["ok"] is False
+    legacy = share.import_bundle(r["file"], base64.b64encode(blob).decode(), code="WRONG1")
+    assert legacy["ok"] is False
 
 
 def test_profile_and_shopping_prefs(tmp_path, monkeypatch):

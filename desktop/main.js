@@ -3,13 +3,14 @@
 const { app, BrowserWindow, globalShortcut, Tray, Menu, ipcMain, screen } = require('electron');
 const path = require('path');
 const os = require('os');
-// Osok-AI needs no disk cache (localhost API + local files): keep everything in temp, no writes to protect
+// Pairing/settings must survive OS temp cleanup: durable per-user data dir (F28).
+// Only throwaway caches stay out of the profile.
 try {
-  const dir = path.join(os.tmpdir(), 'osokai');
+  const dir = path.join(app.getPath('userData'), 'osokai');
   app.setPath('userData', dir);
-  app.commandLine.appendSwitch('disk-cache-dir', path.join(dir, 'cache'));
+  app.commandLine.appendSwitch('disk-cache-dir', path.join(os.tmpdir(), 'osokai-cache'));
   app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
-} catch (e) { console.log('cache setup skipped:', e.message); }
+} catch (e) { console.log('profile setup skipped:', e.message); }
 let win = null, isMini = false, snapTimer = null;
 const W = 680, H_HIDE = 160, H_OPEN = 475, W_MINI = 70, H_MINI = 175;
 const MERGE = 22, SNAP = 80; // px merged into edge / snap distance

@@ -1,5 +1,16 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## code-review batch 1 — ✅ DONE: trust boundary (12 findings, all verified)
+- [x] **F01**: placeholders/short tokens refused at startup (fail fast); setup regenerates them.
+- [x] **F02**: `shell=True` gone — arg arrays, metachar ban, jail-checked args, internal echo/dir, safe git.
+- [x] **F03**: vault domains exact-or-subdomain, empty always denied, scheme/port stripped.
+- [x] **F13**: v3 signed envelopes (Ed25519 identity keys); forgery rejected; key-length validated; silent re-key refused.
+- [x] **F14**: central `paths.safe_join` (resolved, symlink-aware) applied in memory/rag/img/share/runtime/actions.
+- [x] **F15**: share bundles use random 256-bit keys in transit, IDs in filenames; legacy codes retired; import caps + sanitized relatives.
+- [x] **F16**: owner transitions locked (only owner grants owner; add_member can never create owner).
+- [x] **F19**: effect-aware dispatcher — approvals bound to exact action+args, single-use, mismatch refused; wired into the subtask walk.
+- [x] **F26–F29**: mobile never queues secrets; desktop textContent + CSP + durable profile; marketplace v2 manifest signatures, safe uninstall, router honors disable.
+
 ## persistent specialists — ✅ DONE: named autonomous workers (event-triggered, not always-on)
 - [x] `app/specialists.py`: persona + skill + schedule/wake triggers + run history; wake conditions auto-created and cascade-deleted; due-tick wired into the scheduler loop.
 - [x] Seed trio (Researcher/Watcher/Scheduler), 7 endpoints, mobile wrappers. Verified live: seed → run → history → cleanup.
@@ -116,5 +127,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 86 nightly evals gating every release — reliability story.
+- 95 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.
