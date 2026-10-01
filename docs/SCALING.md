@@ -1,5 +1,11 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## feature depth round — ✅ DONE: outfit, bills, loops at the next level
+- [x] **Outfit**: zero-prompt daily plan from calendar, wear history, laundry forecast, duplicate guard, invalid-item feedback guard.
+- [x] **Bills**: month-end balance forecast, expense search, reusable split templates, safe expense delete.
+- [x] **Loops**: weekday repeats (mon/wed/fri), loop health stats, loop search, repeat setter.
+- [x] Chat + endpoints + mobile-ready APIs for all of it, same screens. Evals caught the dispatch-tuple miss pre-ship.
+
 ## connectors 1000x — ✅ DONE: pooled transport, breakers, cache, webhooks, metrics
 - [x] `app/transport.py`: process-wide pooled client, retries with backoff, per-provider circuit breakers, read-through cache, latency/fail metrics into usage + health endpoint.
 - [x] All 5 HTTP modules migrated (github/telegram/whatsapp/razorpay; youtube stays raw-XML). Webhook receiver: signature-verified, bus-normalized, 403s the unsigned.
@@ -181,5 +187,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 134 nightly evals gating every release — reliability story.
+- 138 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

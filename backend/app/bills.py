@@ -28,6 +28,8 @@ def _db():
         id INTEGER PRIMARY KEY, gid INTEGER, title TEXT, amount REAL, paid_by TEXT,
         splits TEXT DEFAULT '', day INT DEFAULT 1, last_post TEXT DEFAULT '')""")
     db.execute("CREATE TABLE IF NOT EXISTS team_bill_link(gid INTEGER PRIMARY KEY, team INTEGER)")
+    db.execute("""CREATE TABLE IF NOT EXISTS split_templates(
+        id INTEGER PRIMARY KEY, gid INTEGER, name TEXT, splits TEXT, ts REAL)""")
     return db
 
 def create_group(name: str, members):
@@ -325,5 +327,87 @@ def parse_receipt(b64_image: str) -> dict:
         return {"ok": True, "draft": {"title": str(d.get("merchant", "Receipt"))[:120],
                                       "total": float(d.get("total", 0)), "items": items}}
     except Exception:
-        return {"ok": False, "error": "Couldn't read that receipt — try flatter, better light."}
+        return {"ok": False, "error": "Receipt unclear - try flatter, better light."}
 
+
+def delete_expense(eid: int) -> dict:
+    """Correct mistakes: removes an expense and its splits. Settles stay (money moved)."""
+    db = _db()
+    row = db.execute("SELECT gid, title, amount FROM bill_expenses WHERE id=?", (eid,)).fetchone()
+    if not row:
+        return {"ok": False, "error": "no such expense"}
+    db.execute("DELETE FROM bill_splits WHERE eid=?", (eid,))
+    db.execute("DELETE FROM bill_expenses WHERE id=?", (eid,))
+    db.commit()
+    return {"ok": True, "removed": f"{row[1]} Rs.{row[2]}"}
+
+
+def search_expenses(gid: int, q: str = "", limit: int = 20):
+    db = _db()
+    like = f"%{(q or '').strip().lower()}%"
+    rows = db.execute("SELECT id, title, amount, paid_by, ts FROM bill_expenses WHERE gid=? AND lower(title) LIKE ? ORDER BY ts DESC LIMIT ?",
+                      (gid, like, max(1, min(50, limit)))).fetchall()
+    return [{"id": r[0], "title": r[1], "amount": r[2], "paid_by": r[3], "ts": r[4]} for r in rows]
+
+
+def save_template(gid: int, name: str, splits: dict) -> dict:
+    """Named split ratios reused across expenses (e.g. room shares)."""
+    import json as _j
+    if not (name or "").strip() or not splits:
+        return {"ok": False, "error": "name + splits required"}
+    db = _db()
+    if not db.execute("SELECT 1 FROM bill_groups WHERE id=?", (gid,)).fetchone():
+        return {"ok": False, "error": "group not found"}
+    try:
+        blob = _j.dumps({str(k): float(v) for k, v in splits.items()})
+    except Exception:
+        return {"ok": False, "error": "bad splits"}
+    import time as _t
+    cur = db.execute("INSERT INTO split_templates(gid, name, splits, ts) VALUES(?,?,?,?)",
+                     (gid, name.strip()[:60], blob, _t.time()))
+    db.commit()
+    return {"ok": True, "id": cur.lastrowid}
+
+
+def list_templates(gid: int):
+    import json as _j
+    db = _db()
+    out = []
+    for r in db.execute("SELECT id, name, splits FROM split_templates WHERE gid=? ORDER BY id", (gid,)).fetchall():
+        try:
+            sp = _j.loads(r[2] or "{}")
+        except Exception:
+            sp = {}
+        out.append({"id": r[0], "name": r[1], "splits": sp})
+    return out
+
+
+def apply_template(gid: int, tid: int, title: str, amount: float, paid_by: str = "Me") -> dict:
+    t = [x for x in list_templates(gid) if x["id"] == tid]
+    if not t:
+        return {"ok": False, "error": "no such template"}
+    return add_expense(gid, title, amount, paid_by, t[0]["splits"])
+
+
+def balance_forecast(gid: int) -> dict:
+    """Projected month-end: posted expenses + due recurring not yet posted."""
+    import datetime as _dt
+    import calendar as _cal
+    today = _dt.date.today()
+    month = today.strftime("%Y-%m")
+    led = house_ledger(gid, month)
+    if not led.get("ok"):
+        return led
+    upcoming, upcoming_total = [], 0.0
+    for r in list_recurring(gid):
+        if today.day < r["day"] and r["last_post"] != month:
+            upcoming.append({"title": r["title"], "amount": r["amount"], "day": r["day"]})
+            upcoming_total += r["amount"]
+    last_day = _cal.monthrange(today.year, today.month)[1]
+    return {"ok": True, "month": month, "posted_total": led["total"],
+            "upcoming": upcoming, "upcoming_total": round(upcoming_total, 2),
+            "projected_total": round(led["total"] + upcoming_total, 2),
+            "days_left": last_day - today.day,
+            "reply": f"{month}: posted Rs.{led['total']}, {len(upcoming)} recurring due "
+                     f"(Rs.{round(upcoming_total, 2)}) -> projected Rs.{round(led['total'] + upcoming_total, 2)} "
+                     f"with {last_day - today.day} days left."}

@@ -1,10 +1,10 @@
 # Osok-AI evidence (F31 truth-in-advertising: numbers, not adjectives)
 
 Updated per release. Everything below is measured by the repo's own battery
-(`backend/tests/`: 134 evals) and harness — rerun any of it.
+(`backend/tests/`: 138 evals) and harness — rerun any of it.
 
 ## Current release
-- **Evals**: 134/134 green (`pytest backend/tests/ -q`)
+- **Evals**: 138/138 green (`pytest backend/tests/ -q`)
 - **Benchmark plan mode**: 130/130 (`POST /benchmark/run {"mode":"plan"}`)
 - **Benchmark live mode**: opt-in only (`OSOKAI_BENCH_LIVE=1`, budget-capped); history at `GET /benchmark/history`
 - **North star**: avg interventions per goal at `GET /benchmark/interventions` (last measured 0.15; lower is better)
@@ -18,6 +18,7 @@ Updated per release. Everything below is measured by the repo's own battery
 ## History
 | Date | Evals | Plan score | Interventions/goal | Note |
 |---|---|---|---|---|
+| 2026-10-01 | 138 | 130/130 | 0.15 | feature depth (outfit/bills/loops next level) |
 | 2026-10-01 | 134 | 130/130 | 0.15 | connectors 1000x (transport, breakers, webhooks) |
 | 2026-10-01 | 131 | 118/118 | 0.15 | connectors tier-1+2 (12 providers, chat-driven, gated) |
 | 2026-10-01 | 124 | 106/106 | 0.15 | social connectors (manifests, gated publish, 6 tasks) |

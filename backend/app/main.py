@@ -1889,6 +1889,22 @@ async def loops_close(lid: int, _=Depends(need_auth)):
 def loops_due(_=Depends(need_auth)):
     return {"due": _loops().due_now()}
 
+@app.get("/loops/search")
+def loops_search(q: str = "", status: str = "", limit: int = 20, _=Depends(need_auth)):
+    return {"loops": _loops().search_loops(q, status, limit)}
+
+@app.get("/loops/stats")
+def loops_stats(_=Depends(need_auth)):
+    return _loops().stats()
+
+@app.post("/loops/{lid}/repeat")
+async def loops_repeat(lid: int, payload: dict, _=Depends(need_auth)):
+    r = _loops().set_repeat(lid, payload.get("repeat", ""))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad repeat"))
+    await hub.push()
+    return r
+
 @app.post("/loops/from-approval/{aid}")
 async def loops_snooze(aid: int, payload: dict = None, _=Depends(need_auth)):
     hours = 3
@@ -2070,6 +2086,8 @@ async def w_add(payload: dict, _=Depends(need_auth)):
     w = _w()
     r = w.add_item(payload.get("category", ""), payload.get("color", ""),
                    payload.get("season", "all"), payload.get("formality", "casual"))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("reply", r.get("error", "add failed")))
     await hub.push()
     return r
 
@@ -2092,6 +2110,18 @@ async def w_feedback(payload: dict, _=Depends(need_auth)):
 @app.get("/wardrobe/prefs")
 def w_prefs(_=Depends(need_auth)):
     return {"prefs": _w().get_prefs()}
+
+@app.get("/wardrobe/plan-today")
+def w_plan_today(_=Depends(need_auth)):
+    return _w().plan_today()
+
+@app.get("/wardrobe/history")
+def w_history(limit: int = 15, _=Depends(need_auth)):
+    return {"history": _w().wear_history(limit)}
+
+@app.get("/wardrobe/laundry-forecast")
+def w_laundry_fc(_=Depends(need_auth)):
+    return _w().laundry_forecast()
 
 @app.get("/wardrobe/plan-week")
 def w_plan_week(_=Depends(need_auth)):
@@ -2429,6 +2459,70 @@ async def bills_receipt(payload: dict, _=Depends(need_auth)):
     r = parse_receipt(payload["image_b64"])
     if not r.get("ok"):
         raise HTTPException(status_code=502, detail=r.get("error", "scan failed"))
+    return r
+
+@app.delete("/bills/expenses/{eid}")
+async def bills_expense_del(eid: int, _=Depends(need_auth)):
+    try:
+        from app.bills import delete_expense
+    except ImportError:
+        from bills import delete_expense
+    r = delete_expense(eid)
+    if not r.get("ok"):
+        raise HTTPException(status_code=404, detail=r.get("error", "not found"))
+    await hub.push()
+    return r
+
+@app.get("/bills/search/{gid}")
+def bills_search(gid: int, q: str = "", limit: int = 20, _=Depends(need_auth)):
+    try:
+        from app.bills import search_expenses
+    except ImportError:
+        from bills import search_expenses
+    return {"expenses": search_expenses(gid, q, limit)}
+
+@app.post("/bills/templates")
+async def bills_tpl_add(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.bills import save_template
+    except ImportError:
+        from bills import save_template
+    r = save_template(int(payload.get("gid", 0)), payload.get("name", ""), payload.get("splits") or {})
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad template"))
+    await hub.push()
+    return r
+
+@app.get("/bills/templates")
+def bills_tpl_list(gid: int = 0, _=Depends(need_auth)):
+    try:
+        from app.bills import list_templates
+    except ImportError:
+        from bills import list_templates
+    return {"templates": list_templates(gid)}
+
+@app.post("/bills/templates/{tid}/apply")
+async def bills_tpl_apply(tid: int, payload: dict, _=Depends(need_auth)):
+    try:
+        from app.bills import apply_template
+    except ImportError:
+        from bills import apply_template
+    r = apply_template(int(payload.get("gid", 0)), tid, payload.get("title", "Split"),
+                       float(payload.get("amount", 0)), payload.get("paid_by", "Me"))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "apply failed"))
+    await hub.push()
+    return r
+
+@app.get("/bills/forecast/{gid}")
+def bills_forecast(gid: int, _=Depends(need_auth)):
+    try:
+        from app.bills import balance_forecast
+    except ImportError:
+        from bills import balance_forecast
+    r = balance_forecast(gid)
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad forecast"))
     return r
 
 @app.patch("/connectors/{cid}")

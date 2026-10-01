@@ -1836,3 +1836,71 @@ def test_connector_endpoints_list(tmp_path, monkeypatch):
     ids = [c["id"] for c in connectors.list_connectors()]
     for want in ("telegram", "github", "razorpay", "whatsapp_business", "youtube", "x", "linkedin"):
         assert want in ids, want
+
+
+# ---- feature scale-up evals: outfit/bills/loops depth ----
+
+def test_outfit_depth(tmp_path, monkeypatch):
+    import wardrobe
+    monkeypatch.setattr(wardrobe, "DB", str(tmp_path / "od.db"))
+    a = wardrobe.add_item("linen shirt", "blue")["id"]
+    d = wardrobe.add_item("linen shirt", "blue")
+    assert d["ok"] is False and d["id"] == a  # duplicate guard
+    assert wardrobe.add_item("", "")["ok"] is False
+    assert wardrobe.feedback(999999, True)["ok"] is False
+    assert wardrobe.feedback(a, True)["ok"] is True
+    wardrobe.mark_worn(a)
+    assert len(wardrobe.wear_history()) == 1
+    fc = wardrobe.laundry_forecast()
+    assert fc["ok"] and "days_left" in fc
+    t = wardrobe.plan_today()
+    assert t["ok"] and t["reply"]
+
+
+def test_bills_depth(tmp_path, monkeypatch):
+    import bills
+    monkeypatch.setattr(bills, "DB", str(tmp_path / "bd.db"))
+    g = bills.create_group("flat", ["Me", "A"])["id"]
+    e = bills.add_expense(g, "Dinner", 1000, "Me", {})["id"]
+    assert bills.verify_ledger(g)["ok"]
+    assert bills.search_expenses(g, "dinn")[0]["id"] == e
+    assert bills.search_expenses(g, "zzz-nope") == []
+    assert bills.save_template(g, "x", {})["ok"] is False
+    assert bills.save_template(999999, "x", {"Me": 1})["ok"] is False
+    tr = bills.save_template(g, "half", {"Me": 500, "A": 500})
+    assert tr["ok"] and len(bills.list_templates(g)) == 1
+    assert bills.apply_template(g, 999999, "L", 1)["ok"] is False
+    assert bills.apply_template(g, tr["id"], "Lunch", 800, "A")["ok"]
+    assert bills.delete_expense(999999)["ok"] is False
+    assert bills.delete_expense(e)["ok"] is True
+    f = bills.balance_forecast(g)
+    assert f["ok"] and "projected_total" in f and f["days_left"] >= 0
+
+
+def test_loops_depth(tmp_path, monkeypatch):
+    import loops
+    monkeypatch.setattr(loops, "DB", str(tmp_path / "ld.db"))
+    assert loops.parse_repeat("every monday and wednesday") == "weekdays:0,2"
+    assert loops.parse_repeat("weekends") == "weekdays:5,6"
+    assert loops.parse_repeat("weekdays") == "weekdays:0,1,2,3,4"
+    assert loops.parse_repeat("daily") == "daily"
+    assert loops.parse_repeat("once") == ""
+    l = loops.add("promise", "probe loop", "test", 0, "weekdays:0,2")
+    assert loops.close(l["id"])["ok"]  # reschedules, stays open
+    assert loops.set_repeat(999999, "daily")["ok"] is False
+    assert loops.set_repeat(l["id"], "daily")["repeat"] == "daily"
+    st = loops.stats()
+    assert st["open"] >= 1 and "reply" in st
+    assert len(loops.search_loops("probe")) >= 1
+    assert loops.search_loops("zzz-no-match") == []
+
+
+def test_scale_intents():
+    from intents import parse
+    for text, typ in [("what did i wear", "outfit_history"), ("plan today", "outfit_today"),
+                      ("outfit today", "outfit_today"), ("laundry forecast", "outfit_laundry_fc"),
+                      ("balance forecast", "bill_forecast"), ("balance forecast for flat", "bill_forecast"),
+                      ("loop stats", "loop_stats"), ("repeat gym daily", "loop_repeat"),
+                      ("repeat call mom weekends", "loop_repeat")]:
+        got, _ = parse(text)
+        assert got and got["type"] == typ, (text, got)

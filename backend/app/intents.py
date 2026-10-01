@@ -42,6 +42,12 @@ def parse(message: str):
     m = re.match(r"^(?:done|finished|completed)\s+(.+)$", t)
     if m and len(m.group(1).split()) <= 8:
         return {"type": "loop_done", "text": m.group(1).strip()}, None
+    m = re.match(r"^(?:loop stats|loops summary|how are my loops)$", t)
+    if m:
+        return {"type": "loop_stats"}, None
+    m = re.match(r"^(?:repeat|make (?:this )?recurring)\s+(.+?)\s+(daily|weekly|weekdays|weekends|mon(?:day)?(?:\s*,\s*\w+)*)$", t)
+    if m:
+        return {"type": "loop_repeat", "text": m.group(1).strip(), "freq": m.group(2).strip()}, None
 
     # play/watch <anything> [on youtube] — songs AND episodes/videos
     m = re.match(r"^(?:play|watch|play the|watch the)\s+(.+?)(?:\s+on\s+(youtube|yt))?$", t)
@@ -123,6 +129,15 @@ def parse(message: str):
     m = re.match(r"^add (.+?) to (?:my )?wardrobe$", t)
     if m:
         return {"type": "outfit_add", "desc": m.group(1).strip()}, None
+    m = re.match(r"^(?:what did i wear|outfit history|recent outfits)$", t)
+    if m:
+        return {"type": "outfit_history"}, None
+    m = re.match(r"^(?:plan today|outfit today|what to wear today|today'?s outfit)$", t)
+    if m:
+        return {"type": "outfit_today"}, None
+    m = re.match(r"^(?:laundry forecast|when is laundry due|laundry status)$", t)
+    if m:
+        return {"type": "outfit_laundry_fc"}, None
 
     # social: draft/post + status (chat-driven, approval-gated publishes)
     m = re.match(r"^(?:post|share|publish|announce)\s+(.+?)\s+on\s+(x|twitter|linkedin|mock)$", t)
@@ -187,6 +202,9 @@ def parse(message: str):
     m = re.match(r"^(?:house ledger|monthly (?:bills|ledger|summary))(?: for (.+))?$", t)
     if m:
         return {"type": "bill_house", "group": (m.group(1) or "").strip()}, None
+    m = re.match(r"^(?:balance forecast|month end forecast|spending forecast)(?: for (.+))?$", t)
+    if m:
+        return {"type": "bill_forecast", "group": (m.group(1) or "").strip()}, None
 
     # open <app>
     m = re.match(r"^open\s+([a-z0-9 .+]+)$", t)
@@ -322,6 +340,33 @@ def execute(action: dict, device: str = "unknown"):
         if r:
             return f"Closed loop #{r['id']} ✓"
         return "No open loop matches that."
+    if at == "loop_stats":
+        try:
+            from app.loops import stats as _lstats
+        except ImportError:
+            from loops import stats as _lstats
+        return _lstats()["reply"]
+    if at == "loop_repeat":
+        try:
+            from app.loops import add as _ladd, set_repeat, parse_repeat
+        except ImportError:
+            from loops import add as _ladd, set_repeat, parse_repeat
+        try:
+            from app.loops import list_loops
+        except ImportError:
+            from loops import list_loops
+        words = set(action.get("text", "").lower().split())
+        best = None
+        for lp in list_loops("open"):
+            overlap = len(words & set((lp.get("title") or "").lower().split()))
+            if overlap and (best is None or overlap > best[0]):
+                best = (overlap, lp)
+        if best:
+            r = set_repeat(best[1]["id"], action.get("freq", ""))
+            return f"Loop #{best[1]['id']} repeats: {r.get('repeat', action.get('freq'))}."
+        rep = parse_repeat(action.get("freq", ""))
+        r = _ladd("promise", action.get("text", ""), "chat", 0, rep)
+        return f"Loop #{r['id']} open, repeats {rep or 'once'}: {action.get('text', '')}."
     if at == "search_save_images":
         try:
             from app.system_tools import save_images
@@ -357,7 +402,8 @@ def execute(action: dict, device: str = "unknown"):
         except ImportError:
             from trip import plan_trip
         return plan_trip(action["origin"], action["dest"], action.get("days", 3))
-    if at in ("outfit_plan", "outfit_occasion", "outfit_pack", "outfit_wore", "outfit_laundry", "outfit_add"):
+    if at in ("outfit_plan", "outfit_occasion", "outfit_pack", "outfit_wore", "outfit_laundry", "outfit_add",
+                "outfit_history", "outfit_today", "outfit_laundry_fc"):
         try:
             from app import wardrobe as _w
         except ImportError:
@@ -392,8 +438,19 @@ def execute(action: dict, device: str = "unknown"):
             color = words[0] if words and words[0] in colors else ""
             category = " ".join(words[1:] if color else words) or desc
             r = _w.add_item(category, color)
+            if not r.get("ok"):
+                return r.get("reply", f"Add failed: {r.get('error')}")
             return f"Added: {color} {category} (#{r['id']}). Tell me its season/formality any time."
-    if at in ("bill_quick", "bill_settle_up", "bill_repeat", "bill_house"):
+        if at == "outfit_history":
+            hist = _w.wear_history(8)
+            if not hist:
+                return "No outfits logged yet — wear something and tell me ('i wore …')."
+            return "Recently worn:\n" + "\n".join(f"• {h['item']} ({h['day']})" for h in hist)
+        if at == "outfit_today":
+            return _w.plan_today()["reply"]
+        if at == "outfit_laundry_fc":
+            return _w.laundry_forecast()["reply"]
+    if at in ("bill_quick", "bill_settle_up", "bill_repeat", "bill_house", "bill_forecast"):
         try:
             from app import bills as _b
         except ImportError:
@@ -435,6 +492,11 @@ def execute(action: dict, device: str = "unknown"):
             if not g:
                 return err
             return _b.house_ledger(g["id"])["reply"]
+        if at == "bill_forecast":
+            g, err = _grp(action.get("group", ""))
+            if not g:
+                return err
+            return _b.balance_forecast(g["id"])["reply"]
     if at in ("social_post", "social_status"):
         try:
             from app import social as _s

@@ -89,6 +89,14 @@ def score(item: dict) -> float:
 def add_item(category: str, color: str = "", season: str = "all",
              formality: str = "casual"):
     db = _db()
+    category, color = (category or "").strip()[:80], (color or "").strip()[:40]
+    if not category:
+        return {"ok": False, "error": "category required"}
+    dup = db.execute("SELECT id FROM wardrobe WHERE lower(category)=lower(?) AND lower(color)=lower(?)",
+                     (category, color)).fetchone()
+    if dup:
+        return {"ok": False, "error": "duplicate", "id": dup[0],
+                "reply": f"You already have {color} {category} (#{dup[0]}) — add anyway from the Wardrobe screen if it's a second one."}
     cur = db.execute("INSERT INTO wardrobe(category, color, season, formality) VALUES(?,?,?,?)",
                      (category, color, season, formality))
     db.commit()
@@ -129,6 +137,9 @@ def get_prefs():
 
 def feedback(item_id: int, good: bool, note: str = ""):
     db = _db()
+    exists = db.execute("SELECT 1 FROM wardrobe WHERE id=?", (item_id,)).fetchone()
+    if not exists:
+        return {"ok": False, "error": "no such item"}
     if good:
         db.execute("UPDATE wardrobe SET wears=wears+1, likes=likes+1 WHERE id=?", (item_id,))
     else:
@@ -299,7 +310,77 @@ def intake_image(b64_image: str) -> dict:
         r = add_item(d.get("category", "item"), d.get("color", ""),
                      d.get("season", "all") if d.get("season") in ("all", "summer", "winter", "monsoon") else "all",
                      d.get("formality", "casual") if d.get("formality") in ("casual", "smart-casual", "formal", "activewear") else "casual")
+        if not r.get("ok"):
+            return {"ok": True, "id": r.get("id"),
+                    "reply": r.get("reply", "Already in your wardrobe.")}
         return {"ok": True, "id": r["id"],
                 "reply": f"Added: {d.get('color','')} {d.get('category','')} ({d.get('formality','casual')})."}
     except Exception:
-        return {"ok": False, "reply": "Couldn't read that photo — try better light, one item at a time."}
+        return {"ok": False, "reply": "Photo unclear - try better light, one item at a time."}
+
+
+def wear_history(limit: int = 15):
+    """Most recently worn first - answers "what did I wear"."""
+    db = _db()
+    rows = db.execute("SELECT id, category, color, last_worn, wears FROM wardrobe WHERE last_worn>0 ORDER BY last_worn DESC LIMIT ?",
+                      (max(1, min(50, limit)),)).fetchall()
+    import datetime as _dt
+    out = []
+    for r in rows:
+        try:
+            day = _dt.datetime.fromtimestamp(r[3]).strftime("%a %d %b")
+        except Exception:
+            day = "?"
+        out.append({"id": r[0], "item": f"{r[2]} {r[1]}".strip(), "day": day, "wears": r[4]})
+    return out
+
+
+def plan_today() -> dict:
+    """Zero-prompt plan: today's calendar events become occasion looks."""
+    try:
+        from app import calendar as _cal
+    except ImportError:
+        import calendar as _cal
+    try:
+        today = _cal.today_str()
+        evs = _cal.list_all(today)
+    except Exception:
+        evs = []
+    if not evs:
+        s = suggest()
+        picks = s["candidates"][:3]
+        w = s["weather"]
+        t = w.get("temp")
+        wx = f"{t}C" if t is not None else "weather n/a"
+        if not picks:
+            return {"ok": True, "reply": "Wardrobe is empty - add a few items first."}
+        return {"ok": True, "reply": f"Easy day, nothing on the calendar. {wx}: {_fmt(picks)}."}
+    lines, used = [], set()
+    for e in evs[:4]:
+        title = e.get("title", "")
+        f = occasion_formality(title) or "smart-casual"
+        cands = [i for i in suggest(formality=f)["candidates"] if i["id"] not in used]
+        picks = (cands or suggest()["candidates"])[:2]
+        used.update(i["id"] for i in picks)
+        tm = (" at " + str(e.get("time"))) if e.get("time") else ""
+        lines.append("- " + title + tm + " -> " + _fmt(picks))
+    return {"ok": True, "events": len(evs), "reply": "Today:\n" + "\n".join(lines)}
+
+
+def laundry_forecast() -> dict:
+    """Days until the fresh pile runs out at current wear rate."""
+    import time as _t
+    items = list_items()
+    if not items:
+        return {"ok": False, "reply": "Wardrobe is empty."}
+    guard = laundry_days() * 86400
+    now = _t.time()
+    fresh = sum(1 for i in items if not i["last_worn"] or (now - i["last_worn"]) > guard)
+    worn_recently = [i for i in items if i["last_worn"] and (now - i["last_worn"]) <= guard]
+    rate = max(1, len(worn_recently) // max(1, laundry_days()))
+    days_left = fresh // rate
+    if days_left <= 1:
+        return {"ok": True, "days_left": days_left,
+                "reply": f"Laundry alert: about {fresh} fresh item(s) left - wash in the next day or two. Say 'laundry done' after."}
+    return {"ok": True, "days_left": days_left,
+            "reply": f"Laundry forecast: about {fresh} fresh items, {days_left} days at your pace."}
