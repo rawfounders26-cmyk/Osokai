@@ -8,7 +8,7 @@ budget): run through the agent loop, record success/steps/cost/interventions.
 import re
 
 CATEGORIES = ("browser", "research", "email_calendar", "coding", "personal",
-              "bills", "wardrobe", "long_running")
+              "bills", "wardrobe", "social", "long_running")
 
 # (id, category, prompt, expected tools (any-of), approval expected?)
 TASKS = [
@@ -105,6 +105,13 @@ TASKS = [
 ("w08", "wardrobe", "Suggest a formal outfit for an interview", ["outfit_suggest"], False),
 ("w09", "wardrobe", "Add a navy blazer for winter weddings", ["wardrobe_add"], False),
 ("w10", "wardrobe", "Laundry is done, reset my wardrobe", ["wardrobe_list"], False),
+# --- social (6) ---
+("s01", "social", "Post launch day on X", ["social_draft"], True),
+("s02", "social", "Post our hiring news on LinkedIn", ["social_draft"], True),
+("s03", "social", "Draft a product announcement for social", ["social_draft"], False),
+("s04", "social", "Show my recent social posts", ["social_draft"], False),
+("s05", "social", "Announce the Diwali sale mock", ["social_draft"], True),
+("s06", "social", "Which platform fits a hiring update, LinkedIn or X", ["social_draft"], False),
 # --- long_running (14) ---
 ("l01", "long_running", "Track Samsung M35 price for 30 days and alert on drops", ["loop_add", "web_search"], False),
 ("l02", "long_running", "Monitor my startup competitors and brief me weekly", ["research", "loop_add"], False),

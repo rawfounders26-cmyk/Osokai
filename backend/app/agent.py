@@ -75,6 +75,8 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {"day": {"type": "string"}}}}},
     {"type": "function", "function": {"name": "email_compose", "description": "Draft email (goes to outbox, needs approval to send).",
         "parameters": {"type": "object", "properties": {"to": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"}}, "required": ["to", "subject", "body"]}}},
+    {"type": "function", "function": {"name": "social_draft", "description": "Stage a social post draft (no side effects; publishing needs approval).",
+        "parameters": {"type": "object", "properties": {"platform": {"type": "string"}, "text": {"type": "string"}}, "required": ["platform", "text"]}}},
     {"type": "function", "function": {"name": "trip_plan", "description": "Plan India road trip: researches route/stays/food, saves itinerary file.",
         "parameters": {"type": "object", "properties": {"origin": {"type": "string"}, "dest": {"type": "string"}, "days": {"type": "integer"}}, "required": ["origin", "dest"]}}},
     {"type": "function", "function": {"name": "img_op", "description": "Edit workspace image. op: resize|convert|compress|thumb|meme. resize needs w (h optional); convert needs fmt; compress needs q; thumb needs s; meme needs top+bottom text.",
@@ -237,7 +239,7 @@ def _run_tool(name: str, args: dict) -> str:
             return f"(save_images error: {e})"
     if name == "seo_check":
         return _seo_check(args.get("url", ""))
-    if name in ("cal_add", "cal_list", "email_compose", "trip_plan"):
+    if name in ("cal_add", "cal_list", "email_compose", "trip_plan", "social_draft"):
         try:
             from app import calendar as _cal, emailbox as _em, trip as _tr
         except ImportError:
@@ -253,6 +255,12 @@ def _run_tool(name: str, args: dict) -> str:
                 return _cal.list_all(args.get("day", ""))
             if name == "email_compose":
                 return _em.compose(args.get("to", ""), args.get("subject", ""), args.get("body", ""))
+            if name == "social_draft":
+                try:
+                    from app import social as _soc
+                except ImportError:
+                    import social as _soc
+                return _soc.draft(args.get("platform", ""), args.get("text", ""))
             return _tr.plan_trip(args.get("origin", ""), args.get("dest", ""), int(args.get("days", 3)))
         except Exception as e:
             return f"(assistant error: {e})"
@@ -428,9 +436,9 @@ def run_goal(goal: str, max_steps: int = 8) -> str:
             _r = _route_tools(goal, roles, _all_names)
             tools = [t for t in TOOLS if t["function"]["name"] in set(_r["tools"])]
         except Exception:
-            tools = [t for t in TOOLS if t["function"]["name"] in ("open_url", "open_app", "browser", "web_search", "fetch_url", "seo_check", "cal_add", "cal_list", "email_compose", "trip_plan", "profile_get", "profile_set", "pref_add")]
+            tools = [t for t in TOOLS if t["function"]["name"] in ("open_url", "open_app", "browser", "web_search", "fetch_url", "seo_check", "cal_add", "cal_list", "email_compose", "social_draft", "trip_plan", "profile_get", "profile_set", "pref_add")]
     else:
-        tools = [t for t in TOOLS if t["function"]["name"] in ("open_url", "open_app", "browser", "web_search", "fetch_url", "seo_check", "cal_add", "cal_list", "email_compose", "trip_plan", "profile_get", "profile_set", "pref_add")]
+        tools = [t for t in TOOLS if t["function"]["name"] in ("open_url", "open_app", "browser", "web_search", "fetch_url", "seo_check", "cal_add", "cal_list", "email_compose", "social_draft", "trip_plan", "profile_get", "profile_set", "pref_add")]
 
     msgs = [{"role": "system", "content": sys}, {"role": "user", "content": goal}]
     body = {"model": model, "messages": msgs, "tools": tools, "max_tokens": 1500}

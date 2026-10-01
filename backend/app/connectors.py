@@ -15,7 +15,11 @@ PROVIDERS = {
     "whatsapp": {"name": "WhatsApp", "color": "#25D366", "open_url": "https://web.whatsapp.com",
                  "auth_kind": "pairing", "hint": "MVP: Baileys QR pairing comes here. For now POST /connectors/whatsapp/connect {token: session-string}"},
     "discord": {"name": "Discord", "color": "#5865F2", "open_url": "https://discord.com/app",
-                "auth_kind": "token", "hint": "Paste Bot Token via POST /connectors/discord/connect {token:...}"},
+              "auth_kind": "token", "hint": "Paste Bot Token via POST /connectors/discord/connect {token:...}"},
+    "x": {"name": "X", "color": "#000000", "open_url": "https://x.com",
+          "auth_kind": "token", "hint": "Set X_BEARER_TOKEN in backend/.env, or paste via POST /connectors/x/connect {token:...}"},
+    "linkedin": {"name": "LinkedIn", "color": "#0A66C2", "open_url": "https://linkedin.com",
+                 "auth_kind": "token", "hint": "Set LINKEDIN_ACCESS_TOKEN in backend/.env, or paste via POST /connectors/linkedin/connect {token:...}"},
     "slack": {"name": "Slack", "color": "#4A154B", "open_url": "https://slack.com/signin",
               "auth_kind": "oauth", "hint": "Add SLACK_CLIENT_ID in backend/.env for real OAuth; MVP accepts pasted token via /connect"},
 }

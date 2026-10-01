@@ -48,7 +48,8 @@ TOOL_KEYWORDS = {
     "browser": ["browser", "click", "form", "login", "automate site", "web task"],
     "web_search": ["search", "find", "look up", "google"],
     "profile_get": ["who am i", "my details", "my budget", "my city"],
-}
+    "social_draft": ["post", "tweet", "share on", "publish", "announce", "linkedin", "social"],
+    "social_publish": ["post", "tweet", "publish live", "share on", "announce"],}
 
 MAX_TOOLS = 18
 

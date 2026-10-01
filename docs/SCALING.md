@@ -1,5 +1,10 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## social connectors — ✅ DONE: our own design (patterns only, zero foreign code)
+- [x] `app/social.py`: manifests (mock/x/linkedin), idempotent publishes, per-destination outcomes, vault+env token bridge.
+- [x] Chat `post … on <platform>` → draft + dispatcher-bound approval → approve → posts exactly once. Approval resolves through the F19 gate (`resolve-then-execute`).
+- [x] Registry + verify + capabilities + intents + agent draft tool (publish stays dispatcher-only) + 6 battery tasks + mobile wrappers + X/LinkedIn provider rows.
+
 ## fortify round — ✅ DONE: 1000x structure + scaled features (no new screens, no duplicates)
 - [x] **Structure**: 32 hot-path indexes via `db.ensure_indexes` (every boot), month graph N+1 → single GROUP BY, shared `paths.safe_join` everywhere.
 - [x] **Sentinel scaled**: 19 precompiled patterns, microsecond scans, web/fetch outputs scanned with taint flags in verify evidence.
@@ -165,5 +170,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 121 nightly evals gating every release — reliability story.
+- 124 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

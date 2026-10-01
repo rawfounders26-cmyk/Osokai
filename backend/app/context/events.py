@@ -25,6 +25,7 @@ TYPES = (
     "loop.opened", "loop.due", "loop.closed",
     "bill.expense_added", "bill.settle_reminder",
     "task.completed", "task.failed",
+    "social.published",
 )
 
 

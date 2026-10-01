@@ -485,6 +485,11 @@ export const placeAdd = (name, kind = '', notes = '') => post('/memory/places', 
 export const recallAll = (q) => get(`/memory/recall-all?q=${encodeURIComponent(q)}`).then(j => j.results || []);
 export const recallConfirm = (text) => post('/memory/confirm', { text });
 
+// social connectors surfaces
+export const socialManifests = () => get('/social/manifests').then(j => j.platforms || {});
+export const socialDraft = (platform, text) => post('/social/draft', { platform, text });
+export const socialStatus = () => get('/social/status').then(j => j.posts || []);
+
 // persistent specialists surfaces
 export const specSeed = () => post('/specialists/seed', {});
 export const specList = () => get('/specialists').then(j => j.specialists || []);

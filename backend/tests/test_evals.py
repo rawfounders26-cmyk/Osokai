@@ -1044,9 +1044,9 @@ def test_router_roles_add_signal():
 
 def test_battery_shape():
     from benchmark import tasks
-    assert tasks.count() == 100
+    assert tasks.count() == 106
     assert set(tasks.CATEGORIES) == {"browser", "research", "email_calendar", "coding",
-                                     "personal", "bills", "wardrobe", "long_running"}
+                                     "personal", "bills", "wardrobe", "social", "long_running"}
     seen = set()
     for tid, cat, prompt, tools, appr in tasks.TASKS:
         assert cat in tasks.CATEGORIES and prompt and tools
@@ -1059,13 +1059,15 @@ def test_plan_run_scores(tmp_path, monkeypatch):
     from benchmark import run
     monkeypatch.setattr(run, "DB", str(tmp_path / "bench.db"))
     r = run.run_plan()
-    assert r["ok"] and r["total"] == 100 and r["mode"] == "plan"
+    assert r["ok"] and r["total"] == 106 and r["mode"] == "plan"
     assert set(r["by_category"]) == set(__import__("benchmark.tasks", fromlist=["CATEGORIES"]).CATEGORIES)
-    assert 0 <= r["score"] <= 100
+    assert r["score"] >= 95  # routing + gates must hold the line as the battery grows
     hist = run.history()
     assert len(hist) == 1 and hist[0]["mode"] == "plan"
     r2 = run.run_plan("bills")
     assert r2["total"] == 12 and set(r2["by_category"]) == {"bills"}
+    r3 = run.run_plan("social")
+    assert r3["total"] == 6 and r3["passed"] == 6
 
 
 def test_live_gated_and_interventions(tmp_path, monkeypatch):
@@ -1629,3 +1631,58 @@ def test_vault_concurrent_and_outfit_cache(tmp_path, monkeypatch):
     a = wardrobe.weather()
     b = wardrobe.weather()
     assert a == b  # cached second call, zero network
+
+# ---- social connectors evals: manifests, drafts, idempotent gated publish ----
+
+def test_social_manifests_and_draft(tmp_path, monkeypatch):
+    import social
+    monkeypatch.setattr(social, "DB", str(tmp_path / "soc.db"))
+    assert social.manifest("x")["max_chars"] == 280
+    assert social.manifest("linkedin")["max_chars"] == 3000
+    assert social.manifest("nope") is None
+    assert social.draft("nope", "hi")["ok"] is False
+    assert social.draft("x", "")["ok"] is False
+    assert social.draft("x", "y" * 500)["ok"] is False
+    d = social.draft("mock", "hello world")
+    assert d["ok"] and d["id"]
+
+
+def test_social_publish_idempotent_and_approved(tmp_path, monkeypatch):
+    import social
+    import memory
+    from policy import dispatch
+    monkeypatch.setattr(social, "DB", str(tmp_path / "soc2.db"))
+    monkeypatch.setattr(memory, "DB", str(tmp_path / "soc3.db"))
+    p1 = social.publish("mock", "launch day", idemp="k-1")
+    assert p1["ok"] and not p1.get("replay")
+    p2 = social.publish("mock", "different text", idemp="k-1")
+    assert p2["ok"] and p2.get("replay") and p2["id"] == p1["id"]  # retry never re-posts
+    assert social.publish("mock", "x" * 500)["ok"] is False
+    assert social.publish("x", "hi")["ok"] is False  # no token in test env
+    rows = social.status()
+    assert any(r["id"] == p1["id"] and r["status"] == "complete" for r in rows)
+    # dispatcher gate: unapproved publish refused, approved executes exactly once
+    g = dispatch.request("social_publish", {"platform": "mock", "text": "launch day"}, "test")
+    assert g["ok"] is False and g["waiting"]
+    m = memory.Memory()
+    m.approval_resolve(g["approval_id"], True, "go")
+    e1 = dispatch.execute_approved(g["approval_id"], "social_publish", {"platform": "mock", "text": "launch day"})
+    assert e1["ok"] is True
+    e2 = dispatch.execute_approved(g["approval_id"], "social_publish", {"platform": "mock", "text": "launch day"})
+    assert e2["ok"] is False  # single-use
+
+
+def test_social_intents_and_propose():
+    from intents import parse
+    from actions import propose, validate
+    got, _ = parse("post launch day on x")
+    assert got and got["type"] == "social_post" and got["platform"] == "x"
+    got, _ = parse("share news on twitter")
+    assert got and got["platform"] == "x"
+    got, _ = parse("social status")
+    assert got and got["type"] == "social_status"
+    assert {a["action"] for a in propose("Draft launch announcement")} >= {"create_file", "social_draft"}
+    v = validate([{"action": "social_publish", "args": {"platform": "mock", "text": "hi"}}])
+    assert v["ok"] and v["needs_approval"] is True
+    v = validate([{"action": "social_draft", "args": {"platform": "", "text": ""}}])
+    assert v["ok"] is False

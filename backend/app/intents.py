@@ -124,6 +124,15 @@ def parse(message: str):
     if m:
         return {"type": "outfit_add", "desc": m.group(1).strip()}, None
 
+    # social: draft/post + status (chat-driven, approval-gated publishes)
+    m = re.match(r"^(?:post|share|publish|announce)\s+(.+?)\s+on\s+(x|twitter|linkedin|mock)$", t)
+    if m:
+        return {"type": "social_post", "text": m.group(1).strip(),
+                "platform": ("x" if m.group(2) in ("x", "twitter") else m.group(2))}, None
+    m = re.match(r"^(?:social status|my posts|post status)$", t)
+    if m:
+        return {"type": "social_status"}, None
+
     # bills: quick split / settle up / recurring / house ledger
     m = re.match(r"^split (\d[\d,]*)\s+for\s+(.+?)\s+(?:with|in|among)\s+(.+)$", t)
     if m:
@@ -392,6 +401,31 @@ def execute(action: dict, device: str = "unknown"):
             if not g:
                 return err
             return _b.house_ledger(g["id"])["reply"]
+    if at in ("social_post", "social_status"):
+        try:
+            from app import social as _s
+        except ImportError:
+            import social as _s
+        if at == "social_status":
+            rows = _s.status()[:5]
+            if not rows:
+                return "No posts yet — say 'post <text> on <x|linkedin|mock>'."
+            return "Latest posts:\n" + "\n".join(
+                f"• #{r['id']} {r['platform']}: {(r['text'] or '')[:60]} — {r['status']}" for r in rows)
+        if at == "social_post":
+            plat, text = action.get("platform", ""), action.get("text", "")
+            d = _s.draft(plat, text)
+            if not d.get("ok"):
+                return f"Draft failed: {d.get('error')}"
+            try:
+                from app.policy.dispatch import request as _gate
+            except ImportError:
+                from policy.dispatch import request as _gate
+            g = _gate("social_publish", {"platform": plat, "text": text}, "chat")
+            if g.get("waiting"):
+                return (f"Drafted for {plat} (#{d['id']}). Publishing needs approval "
+                        f"#{g['approval_id']} — approve on mobile/Command Port and it posts exactly this, once.")
+            return f"Drafted for {plat} (#{d['id']}). Gate says: {g.get('error', 'blocked')}."
     if at == "img":
         try:
             from app import img as _img

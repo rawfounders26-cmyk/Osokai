@@ -47,6 +47,12 @@ REGISTRY = {
     "ask_user": {"args": {"question": "str"}, "required": ["question"],
                  "effect": "ask", "approval": False,
                  "desc": "Pause for a human answer (human-kind tasks)"},
+    "social_draft": {"args": {"platform": "str", "text": "str"}, "required": ["platform", "text"],
+                     "effect": "write", "approval": False,
+                     "desc": "Stage a social post (no side effects; publish needs approval)"},
+    "social_publish": {"args": {"platform": "str", "text": "str"}, "required": ["platform", "text"],
+                       "effect": "outside", "approval": True,
+                       "desc": "Publish a social post (idempotent; approval-bound)"},
 }
 
 _TYPES = {"str": str, "int": int, "float": (int, float), "bool": bool}
@@ -123,6 +129,8 @@ _RULES = [
         {"action": "add_loop", "args": {"title": ""}}]),
     (("otp", "password", "login", "credential", "vault"), [
         {"action": "vault_fill", "args": {"key": ""}}]),
+    (("post", "tweet", "share on", "publish", "announce", "linkedin"), [
+        {"action": "social_draft", "args": {"platform": "", "text": ""}}]),
 ]
 
 

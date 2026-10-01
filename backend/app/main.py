@@ -565,14 +565,21 @@ async def _chat_impl(body: ChatIn, request: Request):
         await hub.push()
         return {"reply": f"Email to {to} drafted (#{em['id']}). Approve #{aid} to send.",
                 "approval_required": True, "approval_id": aid, "kind": "email"}
-    # outfit/bills fast intents run before calendar (else "add X to wardrobe" becomes an event)
+    # outfit/bills/social fast intents run before calendar+policy (structured handlers
+    # own their approvals; the generic policy gate must not hijack them)
     _pre, _ = intent_parse(body.message)
-    if _pre and _pre.get("type", "").startswith(("outfit_", "bill_")):
+    if _pre and _pre.get("type", "").startswith(("outfit_", "bill_", "social_")):
         mem.add("user", body.message)
         reply = _san(intent_run(_pre, body.device))
         mem.add("Osok-AI", reply)
         await hub.push()
-        return {"reply": reply, "approval_required": False, "action": _pre["type"]}
+        out = {"reply": reply, "approval_required": False, "action": _pre["type"]}
+        if _pre["type"] == "social_post":
+            import re as _re3
+            m = _re3.search(r"approval #(\d+)", reply)
+            if m:
+                out.update(approval_required=True, approval_id=int(m.group(1)), kind="action")
+        return out
     # calendar NL: add / list / cancel
     try:
         from app import calendar as _cal
@@ -747,6 +754,29 @@ async def approvals_resolve(aid: int, payload: dict, _=Depends(need_auth)):
             reply = f"email failed: {e}"
         mem.add("user", a["message"])
         mem.add("Osok-AI", reply)
+    elif allow and a.get("kind") == "action":
+        # F19 dispatcher binding: grant first, then execute exactly the approved
+        # action+args single-use (resolve-then-execute, never the reverse)
+        import json as _jj
+        a = mem.approval_resolve(aid, True, "granted via approval UI")
+        try:
+            bound = _jj.loads(a.get("item") or "{}")
+        except Exception:
+            bound = {}
+        try:
+            from app.policy.dispatch import execute_approved as _exec_appr
+        except ImportError:
+            from policy.dispatch import execute_approved as _exec_appr
+        er = _exec_appr(aid, bound.get("action", ""), bound.get("args", {}), "approval-ui")
+        if er.get("ok"):
+            res = er.get("result", {})
+            reply = (res.get("evidence") if isinstance(res, dict) else er.get("evidence") or "done")[:300]
+        else:
+            reply = f"blocked: {er.get('error')}"
+        mem.add("user", a["message"])
+        mem.add("Osok-AI", reply)
+        await hub.push()
+        return {"ok": True, **mem.approval_get(aid), "execution": reply}
     elif allow:
         mem.add("user", a["message"])
         reply = chat_with_grok(a["message"])
@@ -2155,6 +2185,52 @@ def bills_house(gid: int, ym: str = "", _=Depends(need_auth)):
     if not r.get("ok"):
         raise HTTPException(status_code=400, detail=r.get("error", "bad ledger"))
     return r
+
+# ---- social connectors: manifests, drafts, gated publishes, outcomes ----
+@app.get("/social/manifests")
+def social_manifests(_=Depends(need_auth)):
+    try:
+        from app.social import MANIFESTS
+    except ImportError:
+        from social import MANIFESTS
+    return {"platforms": MANIFESTS}
+
+@app.post("/social/draft")
+async def social_draft(payload: dict, _=Depends(need_auth)):
+    try:
+        from app.social import draft
+    except ImportError:
+        from social import draft
+    r = draft(payload.get("platform", ""), payload.get("text", ""))
+    if not r.get("ok"):
+        raise HTTPException(status_code=400, detail=r.get("error", "bad draft"))
+    await hub.push()
+    return r
+
+@app.post("/social/publish")
+async def social_publish(payload: dict, _=Depends(need_auth)):
+    """Direct publish is approval-bound: needs a granted dispatcher approval for
+    the exact platform+text (chat/approval UI is the normal path)."""
+    try:
+        from app.policy.dispatch import execute_approved
+    except ImportError:
+        from policy.dispatch import execute_approved
+    r = execute_approved(int(payload.get("approval_id", 0)),
+                         "social_publish",
+                         {"platform": payload.get("platform", ""), "text": payload.get("text", "")},
+                         "api")
+    if not r.get("ok"):
+        raise HTTPException(status_code=403, detail=r.get("error", "not approved"))
+    await hub.push()
+    return r
+
+@app.get("/social/status")
+def social_status(post_id: int = 0, limit: int = 20, _=Depends(need_auth)):
+    try:
+        from app.social import status
+    except ImportError:
+        from social import status
+    return {"posts": status(post_id, limit)}
 
 @app.post("/bills/receipt")
 async def bills_receipt(payload: dict, _=Depends(need_auth)):

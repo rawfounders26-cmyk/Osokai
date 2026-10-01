@@ -11,7 +11,8 @@ RULES = [
                   r"\bpay\b.*\d{5,}", r"\bpassword\b", r"\botp\b", r"\bcvv\b"], 50000),
     ("HIGH", [r"\bsend\b.*\bemail\b", r"\bdelete\b", r"\bpayment\b", r"\bbuy\b", r"\border\b",
                r"\bpay\b", r"\bpost to\b", r"\bwhatsapp send\b", r"\bsubmit\b.*\bpayment\b",
-               r"\bsend\b", r"\bemail\b", r"\bcomplaint\b", r"\bleave\b"], 10000),
+               r"\bsend\b", r"\bemail\b", r"\bcomplaint\b", r"\bleave\b",
+               r"\bpost\b", r"\bpublish\b", r"\btweet\b", r"\bannounce\b"], 10000),
     ("MEDIUM", [r"\bschedule\b", r"\bpublish\b", r"\bshare\b.*\blink\b", r"\binstall\b",
                  r"\bsettle\b", r"\bsplit\b.*\d"], 0),
 ]

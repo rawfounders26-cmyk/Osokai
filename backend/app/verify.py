@@ -105,6 +105,24 @@ def execute(step: dict, device: str = "verify"):
             r = request_fill(args.get("domain", ""), "login")
             return {"ok": True, "evidence": f"fill request #{r.get('id')} (mediated, never raw)",
                     "id": r.get("id")}
+        if name == "social_draft":
+            try:
+                from app.social import draft
+            except ImportError:
+                from social import draft
+            r = draft(args.get("platform", ""), args.get("text", ""))
+            if not r.get("ok"):
+                return {"ok": False, "evidence": r.get("error", "draft failed")}
+            return {"ok": True, "evidence": f"social draft #{r['id']}", "id": r["id"]}
+        if name == "social_publish":
+            try:
+                from app.social import publish
+            except ImportError:
+                from social import publish
+            r = publish(args.get("platform", ""), args.get("text", ""))
+            if not r.get("ok"):
+                return {"ok": False, "evidence": r.get("error", "publish failed")}
+            return {"ok": True, "evidence": f"published #{r['id']} ({r.get('status')})", "id": r["id"]}
         if name == "add_loop":
             try:
                 from app.loops import add as _add
@@ -179,6 +197,19 @@ def verify(step: dict, exec_out: dict):
             return {"pass": ok, "evidence": exec_out.get("evidence", "") + " (send needs approval)"}
         if name == "vault_fill":
             return {"pass": bool(exec_out.get("id")), "evidence": exec_out.get("evidence", "")}
+        if name == "social_draft":
+            return {"pass": bool(exec_out.get("id")), "evidence": exec_out.get("evidence", "")}
+        if name == "social_publish":
+            pid = exec_out.get("id")
+            if not pid:
+                return {"pass": False, "evidence": "no post id observed"}
+            try:
+                from app.social import status as _st
+            except ImportError:
+                from social import status as _st
+            rows = _st(pid)
+            ok = bool(rows) and rows[0].get("status") in ("complete", "published", "processing")
+            return {"pass": ok, "evidence": f"post #{pid} status={rows[0].get('status') if rows else 'MISSING'}"}
         if name == "add_loop":
             lid = exec_out.get("id")
             if not lid:
