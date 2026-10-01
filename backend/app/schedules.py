@@ -9,6 +9,7 @@ import asyncio
 import datetime
 import json
 import os
+import re
 import sqlite3
 import time
 
@@ -40,20 +41,44 @@ def _db():
 def create(name: str, kind: str, args: dict = None, at_time: str = "", every_min: int = 0) -> dict:
     if kind not in KINDS:
         return {"ok": False, "error": f"kind must be one of {KINDS}"}
+    if not (name or "").strip():
+        return {"ok": False, "error": "name required"}
+    try:
+        every_min = int(every_min or 0)
+    except Exception:
+        return {"ok": False, "error": "every_min must be an integer"}
+    if every_min < 0:
+        return {"ok": False, "error": "every_min cannot be negative"}
+    if at_time and not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", at_time.strip()):
+        return {"ok": False, "error": "at_time must be HH:MM (24h)"}
     if not at_time and not every_min:
         return {"ok": False, "error": "give at_time (HH:MM) or every_min"}
+    try:
+        ablob = json.dumps(args or {})
+    except Exception:
+        return {"ok": False, "error": "args must be JSON-serializable"}
+    if len(ablob) > 2000:
+        return {"ok": False, "error": "args too large (>2000 chars)"}
     db = _db()
     cur = db.execute("INSERT INTO schedules(name, kind, args, at_time, every_min, created) VALUES(?,?,?,?,?,?)",
-                     (name[:120], kind, json.dumps(args or {})[:2000], at_time, max(0, every_min), time.time()))
+                     (name[:120], kind, ablob, at_time.strip(), every_min, time.time()))
     db.commit()
     return {"ok": True, "id": cur.lastrowid}
 
 
 def list_jobs():
     db = _db()
-    rows = db.execute("SELECT id, name, kind, args, at_time, every_min, enabled, last_run FROM schedules ORDER BY id").fetchall()
-    return [{"id": r[0], "name": r[1], "kind": r[2], "args": json.loads(r[3] or "{}"),
-             "at_time": r[4], "every_min": r[5], "enabled": bool(r[6]), "last_run": r[7]} for r in rows]
+    rows = db.execute("SELECT id, name, kind, args, at_time, every_min, enabled, last_run, created FROM schedules ORDER BY id").fetchall()
+    out = []
+    for r in rows:
+        try:
+            a = json.loads(r[3] or "{}")
+        except Exception:
+            a = {}
+        out.append({"id": r[0], "name": r[1], "kind": r[2], "args": a,
+                    "at_time": r[4], "every_min": r[5], "enabled": bool(r[6]),
+                    "last_run": r[7], "created": r[8] or 0})
+    return out
 
 
 def set_enabled(jid: int, enabled: bool) -> dict:

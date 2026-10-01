@@ -1,5 +1,12 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## code-review batch 2 — ✅ DONE: no silent loss (F04–F06, F19 wired, F20–F22)
+- [x] **F04**: relay/e2e/presence pulls are read-only; per-ID ack endpoints; crashes lose nothing (25-msg loss reproduced → fixed).
+- [x] **F05**: mobile queue rewritten (full suffix, status-checked, serialized, exhausted failures surfaced) + server idempotency keys on chat (replay, never re-execute; verified live).
+- [x] **F06**: schedules validate inputs, persist `created`, interval first-run works.
+- [x] **F20**: retry actually re-executes in background; startup reconciles stuck runs to stalled.
+- [x] **F21/F22**: oversize payloads rejected pre-storage (never truncated); malformed rows quarantined; empty pulls commit cleanly.
+
 ## code-review batch 1 — ✅ DONE: trust boundary (12 findings, all verified)
 - [x] **F01**: placeholders/short tokens refused at startup (fail fast); setup regenerates them.
 - [x] **F02**: `shell=True` gone — arg arrays, metachar ban, jail-checked args, internal echo/dir, safe git.
@@ -127,5 +134,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 95 nightly evals gating every release — reliability story.
+- 99 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

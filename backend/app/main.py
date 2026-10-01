@@ -94,6 +94,14 @@ async def _start_proactive():
     import asyncio as _aio
     try:
         try:
+            from app.tasks import reconcile as _reconcile
+        except ImportError:
+            from tasks import reconcile as _reconcile
+        _reconcile()  # F20: stale "running" runs become stalled, never phantom-live
+    except Exception:
+        pass
+    try:
+        try:
             from app.proactive import loop as _ploop
             from app.schedules import loop as _sloop
         except ImportError:
@@ -108,6 +116,7 @@ class ChatIn(BaseModel):
     message: str
     mode: str = "general"
     device: str = "unknown"
+    idemp: str = ""
 
 # ---- real-time sync hub: every mutation bumps rev and pushes to all surfaces ----
 class Hub:
@@ -436,8 +445,35 @@ def pairing_redeem(payload: dict):
         raise HTTPException(status_code=404, detail="bad or expired code")
     return {"ok": True, "url": rec["url"], "token": os.getenv("OSOKAI_AUTH_TOKEN", "")}
 
-@app.post("/chat")
-async def chat(body: ChatIn, _=Depends(need_auth)):
+def _idem_lookup(key: str):
+    if not key:
+        return None
+    try:
+        hit = mem.db.execute("SELECT response FROM idempotency WHERE key=? AND ts>?",
+                             (key, time.time() - 86400)).fetchone()
+        if hit:
+            import json as _jj
+            cached = _jj.loads(hit[0])
+            cached["idempotent_replay"] = True
+            return cached
+    except Exception:
+        pass
+    return None
+
+
+def _idem_store(key: str, out: dict):
+    if not key or not isinstance(out, dict):
+        return
+    try:
+        import json as _jj
+        mem.db.execute("INSERT OR REPLACE INTO idempotency(key, response, ts) VALUES(?,?,?)",
+                       (key, _jj.dumps(out)[:4000], time.time()))
+        mem.db.commit()
+    except Exception:
+        pass
+
+
+async def _chat_impl(body: ChatIn, request: Request):
     try:
         from app.system_tools import sanitize_reply as _san
     except ImportError:
@@ -645,6 +681,17 @@ async def chat(body: ChatIn, _=Depends(need_auth)):
     await hub.push()
     return {"reply": reply, "approval_required": False}
 
+@app.post("/chat")
+async def chat(body: ChatIn, request: Request, _=Depends(need_auth)):
+    """Thin wrapper: idempotency replay + store around the real pipeline."""
+    idem = (request.headers.get("X-Idempotency-Key", "") or body.idemp or "").strip()[:128]
+    hit = _idem_lookup(idem)
+    if hit is not None:
+        return hit
+    out = await _chat_impl(body, request)
+    _idem_store(idem, out)
+    return out
+
 @app.get("/approvals")
 def approvals_list(_=Depends(need_auth)):
     return {"pending": mem.approval_list_pending()}
@@ -712,7 +759,19 @@ async def run_retry(rid: int, _=Depends(need_auth)):
         import tasks as _runs
     r = _runs.retry(rid)
     if not r:
-        raise HTTPException(status_code=404, detail="run not found")
+        raise HTTPException(status_code=404, detail="run not found or not retryable (only failed/done)")
+    import threading as _th
+
+    def _reexec():
+        try:
+            _runs.log_step(rid, "re-execution started", 10)
+            reply = agent_run(r["title"])
+            _runs.log_step(rid, "re-execution finished", 90)
+            _runs.complete(rid, reply)
+        except Exception as e:
+            _runs.complete(rid, f"[osok-ai-error] retry failed: {e}", "failed")
+
+    _th.Thread(target=_reexec, daemon=True).start()
     await hub.push()
     return r
 
@@ -994,6 +1053,15 @@ def devices_list(_=Depends(need_auth)):
     except ImportError:
         from presence import list_devices
     return {"devices": list_devices()}
+
+@app.post("/devices/ack")
+async def devices_ack(payload: dict, _=Depends(need_auth)):
+    """Acknowledge received outbox IDs — only these are marked delivered (F04)."""
+    try:
+        from app.presence import ack
+    except ImportError:
+        from presence import ack
+    return ack(payload.get("device", "unknown"), payload.get("ids", []))
 
 @app.get("/updates/latest")
 def updates_latest():
@@ -1350,6 +1418,15 @@ def relay_pull(device: str, _=Depends(need_auth)):
         from relay import pull
     return {"envelopes": pull(device)}
 
+@app.post("/relay/ack")
+async def relay_ack(payload: dict, _=Depends(need_auth)):
+    """Acknowledge received envelope IDs — only these are marked delivered (F04)."""
+    try:
+        from app.relay import ack
+    except ImportError:
+        from relay import ack
+    return ack(payload.get("device", ""), payload.get("ids", []))
+
 # ---- v0.4: voice sessions (chunked audio -> transcribe -> command) ----
 _voice_sessions: dict = {}
 
@@ -1437,6 +1514,15 @@ def e2e_pull(device: str, _=Depends(need_auth)):
     except ImportError:
         from e2e import pull_envelopes
     return {"envelopes": pull_envelopes(device)}
+
+@app.post("/e2e/ack")
+async def e2e_ack(payload: dict, _=Depends(need_auth)):
+    """Acknowledge received envelope IDs — only these are marked delivered (F04)."""
+    try:
+        from app.e2e import ack_envelopes
+    except ImportError:
+        from e2e import ack_envelopes
+    return ack_envelopes(payload.get("device", ""), payload.get("ids", []))
 
 # ---- v0.5: SLM slot ----
 @app.get("/slm/status")

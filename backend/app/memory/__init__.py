@@ -31,6 +31,7 @@ class Memory:
         self.db.execute("""CREATE TABLE IF NOT EXISTS facts(
             id INTEGER PRIMARY KEY, fact TEXT, salience REAL DEFAULT 1.0, ts REAL)""")
         self.db.execute("CREATE TABLE IF NOT EXISTS summary(id INTEGER PRIMARY KEY CHECK(id=1), text TEXT, updated REAL)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS idempotency(key TEXT PRIMARY KEY, response TEXT, ts REAL)")
 
     def add(self, role, text):
         with _lock:

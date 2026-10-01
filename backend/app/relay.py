@@ -23,6 +23,7 @@ except ImportError:
     from db import connect as _hardb
 DB = _pdata("osokai.db")
 TTL = 7 * 86400
+MAX_ENVELOPE_CHARS = 8000
 
 
 def _key() -> bytes:
@@ -39,10 +40,21 @@ def _db():
     return db
 
 
+def _size_ok(blob: str, cap: int = MAX_ENVELOPE_CHARS):
+    # relay_inbox.envelope holds raw Fernet ciphertext (not JSON) — check shape only
+    return isinstance(blob, str) and 0 < len(blob) <= cap
+
+
 def seal(device: str, payload: dict) -> dict:
     from cryptography.fernet import Fernet
     f = Fernet(_key())
-    ct = f.encrypt(json.dumps(payload)[:8000].encode()).decode()
+    try:
+        blob = json.dumps(payload)
+    except Exception:
+        return {"ok": False, "error": "payload must be JSON-serializable"}
+    if len(blob) > MAX_ENVELOPE_CHARS:
+        return {"ok": False, "error": f"payload too large (>{MAX_ENVELOPE_CHARS} chars)"}
+    ct = f.encrypt(blob.encode()).decode()
     db = _db()
     cur = db.execute("INSERT INTO relay_inbox(device, envelope, ts) VALUES(?,?,?)", (device, ct, time.time()))
     db.commit()
@@ -55,16 +67,34 @@ def unseal(ct: str) -> dict:
 
 
 def pull(device: str, limit: int = 20):
-    """Return sealed envelopes (still encrypted) + mark delivered. Server never decrypts."""
+    """Return sealed envelopes (still encrypted). Read-only: nothing is marked.
+    Clients acknowledge received IDs separately (F04) — crashes lose nothing."""
     db = _db()
     db.execute("DELETE FROM relay_inbox WHERE ts<?", (time.time() - TTL,))
+    db.commit()
     rows = db.execute("SELECT id, envelope, ts FROM relay_inbox WHERE device=? AND delivered=0 ORDER BY id LIMIT ?",
-                      (device, limit)).fetchall()
-    out = [{"id": r[0], "envelope": r[1], "ts": r[2]} for r in rows]
-    if rows:
-        db.execute("UPDATE relay_inbox SET delivered=1 WHERE device=? AND delivered=0", (device,))
-        db.commit()
+                      (device, max(1, min(100, limit)))).fetchall()
+    out = []
+    for r in rows:
+        if not _size_ok(r[1]):
+            continue  # quarantine malformed legacy rows, keep serving the rest
+        out.append({"id": r[0], "envelope": r[1], "ts": r[2]})
     return out
+
+
+def ack(device: str, ids) -> dict:
+    """Mark exactly the received IDs delivered (scoped to device). Idempotent."""
+    try:
+        clean = [int(i) for i in (ids or [])]
+    except Exception:
+        return {"ok": False, "error": "ids must be integers"}
+    if not clean:
+        return {"ok": True, "acked": 0}
+    db = _db()
+    cur = db.execute(f"UPDATE relay_inbox SET delivered=1 WHERE device=? AND delivered=0 AND id IN ({','.join('?' * len(clean))})",
+                     (device, *clean))
+    db.commit()
+    return {"ok": True, "acked": cur.rowcount}
 
 
 def pending_count(device: str) -> int:

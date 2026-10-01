@@ -16,32 +16,72 @@ export async function queueLength() {
   } catch { return 0; }
 }
 
+function uid() {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  } catch {}
+  return `q-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+}
+
 async function enqueue(path, body) {
+  // F05: every item carries an idempotency key; server dedups retries
   try {
     const q = JSON.parse((await AsyncStorage.getItem(QUEUE_KEY)) || '[]');
-    q.push({ path, body, ts: Date.now() });
+    q.push({ key: uid(), path, body, ts: Date.now(), attempts: 0 });
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(q.slice(-50)));
   } catch {}
 }
 
+// F05: serialized flush — one runner at a time, full suffix retained,
+// retryable failures kept, permanent ones surfaced, never silently dropped
+let flushing = null;
 export async function flushQueue() {
-  let q = [];
-  try { q = JSON.parse((await AsyncStorage.getItem(QUEUE_KEY)) || '[]'); } catch {}
-  if (!q.length) return 0;
-  const [base, hdrs] = await Promise.all([baseUrl(), headers()]);
-  const left = [];
-  let sent = 0;
-  for (const item of q) {
-    try {
-      await fetch(`${base}${item.path}`, { method: 'POST', headers: hdrs, body: JSON.stringify(item.body) });
-      sent++; // any HTTP answer counts as delivered (even 4xx: server saw it)
-    } catch (e) {
-      if (isNetErr(e)) { left.push(item); break; } // still offline: keep rest
-      sent++;
+  if (flushing) return flushing;
+  flushing = (async () => {
+    let q = [];
+    try { q = JSON.parse((await AsyncStorage.getItem(QUEUE_KEY)) || '[]'); } catch {}
+    if (!q.length) return 0;
+    const [base, hdrs] = await Promise.all([baseUrl(), headers()]);
+    const left = [];
+    const failed = [];
+    let sent = 0;
+    for (const item of q) {
+      try {
+        const res = await fetch(`${base}${item.path}`, {
+          method: 'POST', headers: { ...hdrs, 'X-Idempotency-Key': item.key || '' },
+          body: JSON.stringify({ ...(item.body || {}), _idemp: item.key || '' }),
+        });
+        if (res.status >= 500 || res.status === 429) {
+          item.attempts = (item.attempts || 0) + 1;
+          if (item.attempts < 5) left.push(item);  // retryable: kept
+          else failed.push(item);                  // exhausted: surfaced, not lost silently
+        } else {
+          sent++;  // delivered (even 4xx: server saw and decided it)
+        }
+      } catch (e) {
+        if (isNetErr(e)) {
+          left.push(item, ...q.slice(q.indexOf(item) + 1));  // keep item AND everything after it
+          break;
+        }
+        item.attempts = (item.attempts || 0) + 1;
+        (item.attempts < 5 ? left : failed).push(item);
+      }
     }
-  }
-  await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(left));
-  return sent;
+    await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(left));
+    if (failed.length) {
+      try {
+        await AsyncStorage.setItem('osokai_failed_queue',
+          JSON.stringify(failed.slice(-20).map(f => ({ ...f, failedAt: Date.now() }))));
+      } catch {}
+    }
+    return sent;
+  })();
+  try { return await flushing; } finally { flushing = null; }
+}
+
+export async function failedQueue() {
+  try { return JSON.parse((await AsyncStorage.getItem('osokai_failed_queue')) || '[]'); }
+  catch { return []; }
 }
 
 async function headers() {

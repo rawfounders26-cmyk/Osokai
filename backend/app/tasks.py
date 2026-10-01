@@ -72,8 +72,27 @@ def running():
     return list_runs(20, "running")
 
 def retry(rid: int):
-    """Re-queue a failed run: back to running, keeps old steps as history."""
+    """Re-queue a failed run: back to running, keeps old steps as history.
+    Title holds the original request so the caller can re-execute for real (F20)."""
     db = _db()
+    r = db.execute("SELECT id FROM task_runs WHERE id=? AND status IN ('failed','done')", (rid,)).fetchone()
+    if not r:
+        return None
     db.execute("UPDATE task_runs SET status='running', progress=0, updated=? WHERE id=?", (time.time(), rid))
     db.commit()
+    log_step(rid, "retried — re-executing original request", 5)
     return get(rid)
+
+
+def reconcile() -> dict:
+    """Startup recovery (F20): runs stuck 'running' across a restart are marked
+    stalled (not silently running, not fake-done). Returns counts."""
+    db = _db()
+    rows = db.execute("SELECT id FROM task_runs WHERE status='running'").fetchall()
+    ids = [r[0] for r in rows]
+    for rid in ids:
+        db.execute("UPDATE task_runs SET status='stalled', updated=? WHERE id=?", (time.time(), rid))
+    db.commit()
+    for rid in ids:
+        log_step(rid, "marked stalled after restart — retry to re-execute", 0)
+    return {"ok": True, "stalled": len(ids)}

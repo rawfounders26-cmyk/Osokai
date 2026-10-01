@@ -181,11 +181,29 @@ def push_envelope(device: str, envelope: dict) -> dict:
 
 
 def pull_envelopes(device: str, limit: int = 20):
+    """Read-only fetch. Clients ack received IDs separately — crashes lose nothing."""
     db = _db()
     rows = db.execute("SELECT id, envelope, ts FROM e2e_inbox WHERE device=? AND delivered=0 ORDER BY id LIMIT ?",
-                      (device, limit)).fetchall()
-    out = [{"id": r[0], "envelope": json.loads(r[1]), "ts": r[2]} for r in rows]
-    if rows:
-        db.execute("UPDATE e2e_inbox SET delivered=1 WHERE device=? AND delivered=0", (device,))
-        db.commit()
+                      (device, max(1, min(100, limit)))).fetchall()
+    out = []
+    for r in rows:
+        try:
+            env = json.loads(r[1])
+        except Exception:
+            continue  # quarantine malformed legacy rows
+        out.append({"id": r[0], "envelope": env, "ts": r[2]})
     return out
+
+
+def ack_envelopes(device: str, ids) -> dict:
+    try:
+        clean = [int(i) for i in (ids or [])]
+    except Exception:
+        return {"ok": False, "error": "ids must be integers"}
+    if not clean:
+        return {"ok": True, "acked": 0}
+    db = _db()
+    cur = db.execute(f"UPDATE e2e_inbox SET delivered=1 WHERE device=? AND delivered=0 AND id IN ({','.join('?' * len(clean))})",
+                     (device, *clean))
+    db.commit()
+    return {"ok": True, "acked": cur.rowcount}

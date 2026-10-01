@@ -132,7 +132,9 @@ def test_presence_offline_queue(tmp_path, monkeypatch):
     presence.queue("phone", "nudge", {"text": "hi"})
     first = presence.pending("phone")
     assert len(first) == 1 and first[0]["payload"]["text"] == "hi"
-    assert presence.pending("phone") == []  # delivered once
+    assert len(presence.pending("phone")) == 1  # read-only: crash loses nothing
+    assert presence.ack("phone", [first[0]["id"]])["acked"] == 1
+    assert presence.pending("phone") == []  # only acked gone
 
 # ---- v0.3 scale-up evals: fast lane, usage, marketplace, teams, voice ----
 
@@ -258,7 +260,9 @@ def test_relay_sealed_roundtrip(tmp_path, monkeypatch):
     assert len(envs) == 1
     assert "secret hello" not in envs[0]["envelope"]  # ciphertext at rest
     assert relay.unseal(envs[0]["envelope"]) == {"text": "secret hello"}
-    assert relay.pull("phone") == []  # delivered once
+    assert len(relay.pull("phone")) == 1  # read-only pull repeats safely
+    assert relay.ack("phone", [envs[0]["id"]])["acked"] == 1
+    assert relay.pull("phone") == []
 
 
 def test_slm_confidence_routing():
@@ -377,6 +381,8 @@ def test_e2e_server_blind_roundtrip(tmp_path, monkeypatch):
     opened = e2e.open_envelope(desk["private"], pulled[0]["envelope"])
     assert opened["from"] == "phone" and opened["payload"] == {"text": "meet at 8"}
     assert opened["sender_authenticated"] is False  # v2: confidential only
+    assert len(e2e.pull_envelopes("desk")) == 1  # read-only: crash loses nothing
+    assert e2e.ack_envelopes("desk", [pulled[0]["id"]])["acked"] == 1
     assert e2e.pull_envelopes("desk") == []
 
 
@@ -1259,3 +1265,80 @@ def test_f29_marketplace_hardening(tmp_path, monkeypatch):
     assert marketplace.set_enabled("demo2", False)["ok"]
     assert marketplace.uninstall("demo2")["ok"]
     assert list((tmp_path / "roles").glob("*")) == []  # only the pack dir removed
+
+# ---- code-review batch 2 evals: no silent loss ----
+
+def test_f04_per_id_ack(tmp_path, monkeypatch):
+    import relay
+    import presence
+    import e2e
+    monkeypatch.setattr(relay, "DB", str(tmp_path / "q.db"))
+    monkeypatch.setattr(presence, "DB", str(tmp_path / "q2.db"))
+    monkeypatch.setattr(e2e, "DB", str(tmp_path / "q3.db"))
+    for i in range(5):
+        relay.seal("d", {"n": i})
+    first = relay.pull("d", limit=2)
+    assert len(first) == 2
+    assert len(relay.pull("d", limit=10)) == 5  # nothing auto-marked: crash loses nothing
+    assert relay.ack("d", [m["id"] for m in first])["acked"] == 2
+    assert len(relay.pull("d", limit=10)) == 3  # only acked gone
+    assert relay.ack("d", [m["id"] for m in first])["acked"] == 0  # idempotent
+    assert relay.seal("d", {"x": "y" * 9000})["ok"] is False  # oversize rejected, not truncated
+    presence.queue("p", "n", {"a": 1})
+    items = presence.pending("p")
+    assert len(items) == 1 and len(presence.pending("p")) == 1
+    assert presence.ack("p", [items[0]["id"]])["acked"] == 1
+    assert presence.pending("p") == []
+    assert presence.queue("p", "n", {"x": "z" * 5000})["ok"] is False
+
+
+def test_f06_schedule_first_run(tmp_path, monkeypatch):
+    import schedules
+    import time as _t
+    monkeypatch.setattr(schedules, "DB", str(tmp_path / "s3.db"))
+    assert schedules.create("bad", "nudge_scan", {}, every_min=-1)["ok"] is False
+    assert schedules.create("bad", "nudge_scan", {}, at_time="99:99")["ok"] is False
+    assert schedules.create("bad", "nope", {}, every_min=5)["ok"] is False
+    j = schedules.create("fast", "nudge_scan", {}, every_min=1)
+    assert j["ok"]
+    job = [x for x in schedules.list_jobs() if x["id"] == j["id"]][0]
+    assert job["created"] > 0  # created persisted (F06 root cause)
+    assert schedules._due(dict(job, last_run=0, created=_t.time() - 120), _t.time()) is True
+    r = schedules.create("big", "nudge_scan", {"x": "y" * 3000}, every_min=60)
+    assert r["ok"] is False  # oversize args rejected
+
+
+def test_f20_retry_reconcile(tmp_path, monkeypatch):
+    import tasks
+    monkeypatch.setattr(tasks, "DB", str(tmp_path / "t4.db"))
+    rid = tasks.create("probe run")
+    tasks.complete(rid, "boom", "failed")
+    r = tasks.retry(rid)
+    assert r and r["status"] == "running"
+    assert tasks.retry(999999) is None
+    rid2 = tasks.create("stuck run")
+    rec = tasks.reconcile()
+    assert rec["stalled"] == 2  # rid (running) + rid2
+    assert tasks.get(rid)["status"] == "stalled"  # never phantom-live
+
+
+def test_f21_no_truncate_and_f22_cleanup(tmp_path, monkeypatch):
+    import relay
+    import e2e
+    monkeypatch.setattr(relay, "DB", str(tmp_path / "q4.db"))
+    monkeypatch.setattr(e2e, "DB", str(tmp_path / "q5.db"))
+    assert relay.seal("d", {"t": "ok"})["ok"] is True
+    assert relay.seal("d", {"t": object()})["ok"] is False
+    a, b = e2e.generate_keypair(), e2e.generate_keypair()
+    env = e2e.seal_to(a["private"], b["public"], "a", {"m": 1})
+    assert e2e.push_envelope("b", env)["ok"] is True
+    pulled = e2e.pull_envelopes("b")
+    assert len(pulled) == 1  # read-only pull, still there
+    assert len(e2e.pull_envelopes("b")) == 1
+    assert e2e.ack_envelopes("b", [pulled[0]["id"]])["acked"] == 1
+    assert e2e.pull_envelopes("b") == []
+    db = relay._db()
+    db.execute("INSERT INTO relay_inbox(device, envelope, ts) VALUES(?,?,?)", ("d", "not-json{{{", 0))
+    db.commit()
+    got = relay.pull("d")  # malformed legacy row quarantined, valid rows flow
+    assert all(m["id"] != 999999 for m in got)
