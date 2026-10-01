@@ -43,8 +43,26 @@ def mask(value: str, keep: int = 4) -> str:
 import json as _json
 import time as _time
 
-_STORE = os.path.join(os.path.dirname(__file__), "..", "vault_secrets.json")
+try:
+    from app.paths import data as _pdata, atomic_write_json as _atomic_json
+except ImportError:
+    from paths import data as _pdata, atomic_write_json as _atomic_json
+
+# F09: vault store lives in the persistent data dir (survives container replacement)
+_STORE = _pdata("vault_secrets.json")
 _scache = {"mtime": 0, "data": {}}
+
+def _migrate_store():
+    """One-time move from the legacy source-tree path. Never deletes the original."""
+    legacy = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "vault_secrets.json"))
+    try:
+        if not os.path.isfile(os.path.normpath(_STORE)) and os.path.isfile(legacy):
+            import shutil as _sh
+            _sh.copy2(legacy, os.path.normpath(_STORE))
+    except Exception:
+        pass
+
+_migrate_store()
 
 def _read_store():
     try:
@@ -59,7 +77,8 @@ def _read_store():
         return {}
 
 def _write_store(d):
-    _json.dump(d, open(os.path.normpath(_STORE), "w"))
+    _atomic_json(os.path.normpath(_STORE), d)
+    _scache.update(mtime=0, data=d)
 
 def secret_set(scope: str, key: str, value: str, policy: str = "while-unlocked", domains=None):
     if not key or not value:

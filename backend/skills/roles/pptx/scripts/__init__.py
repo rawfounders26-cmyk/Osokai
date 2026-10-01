@@ -1,1 +1,1 @@
-[Empty file]
+"""pptx skill scripts."""

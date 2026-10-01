@@ -12,14 +12,10 @@
 
 	encode gzip
 
-	# abuse shield in front of the app's own rate limits
-	rate_limit {
-		zone dynamic_api {
-			key    {remote_host}
-			window 1m
-			events 300
-		}
-	}
+	# NOTE (F08): stock caddy:2-alpine has no rate_limit module. Abuse shielding
+	# lives in the backend limiter + lockout; keep this file valid on stock Caddy.
+	# If edge rate-limiting is ever needed, pin a custom Caddy build with the
+	# rate-limit module and re-add the block here.
 
 	log {
 		output stdout

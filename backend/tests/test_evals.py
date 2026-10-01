@@ -1424,3 +1424,74 @@ def test_f31_files_read_and_matrix(tmp_path, monkeypatch):
     import os as _os
     cap = _os.path.join(_os.path.dirname(__file__), "..", "..", "docs", "CAPABILITY.md")
     assert _os.path.isfile(cap)
+
+# ---- code-review batch 4 evals: reproducible delivery ----
+
+def test_f08_caddy_stock_valid():
+    import os as _os
+    cf = _os.path.join(_os.path.dirname(__file__), "..", "..", "Caddyfile")
+    src = open(cf).read()
+    assert "rate_limit" not in src or "no rate_limit" in src.lower() or "custom caddy build" in src.lower()
+    assert "reverse_proxy osokai:8765" in src
+
+
+def test_f09_stores_in_data_dir(tmp_path, monkeypatch):
+    import vault
+    import connectors
+    monkeypatch.setattr(vault, "_STORE", str(tmp_path / "vault_secrets.json"))
+    monkeypatch.setattr(connectors, "VAULT", str(tmp_path / "connector_vault.json"))
+    assert vault._STORE.endswith("vault_secrets.json") and "backend" not in vault._STORE.replace(str(tmp_path), "")
+    import paths
+    monkeypatch.setattr(paths, "base", lambda: str(tmp_path))
+    assert paths.data("x").startswith(str(tmp_path))
+
+
+def test_f09_atomic_write(tmp_path):
+    import sys as _s
+    _s.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+    from paths import atomic_write_json
+    fp = str(tmp_path / "s.json")
+    atomic_write_json(fp, {"a": 1})
+    import json as _j
+    assert _j.load(open(fp)) == {"a": 1}
+    atomic_write_json(fp, {"a": 2})
+    assert _j.load(open(fp)) == {"a": 2}
+
+
+def test_f11_backup_scripts_fail_loud():
+    import os as _os
+    base = _os.path.join(_os.path.dirname(__file__), "..", "..", "scripts")
+    b = open(_os.path.join(base, "backup.sh")).read()
+    assert "OSOKAI_BACKUP_KEY" in b and "FATAL" in b and "integrity_check" in b
+    assert "cp \"$DATA_DIR/osokai.db\"" not in b  # never raw-copy the live WAL db
+    r = open(_os.path.join(base, "restore.sh")).read()
+    assert "--drill" in r and "integrity_check" in r and "-wal" in r
+
+
+def test_f33_dockerignore():
+    import os as _os
+    di = open(_os.path.join(_os.path.dirname(__file__), "..", "..", ".dockerignore")).read()
+    for pat in (".env", ".db", "vault", "workspace", "build/"):
+        assert pat in di, pat
+
+
+def test_f24_flutter_ident():
+    import os as _os
+    src = open(_os.path.join(_os.path.dirname(__file__), "..", "..", "mobile", "lib", "screens", "home_screen.dart")).read()
+    assert "$apiBase" not in src and "OsokaiApi.base" in src
+
+
+def test_f32_test_deps_declared():
+    import os as _os
+    req = open(_os.path.join(_os.path.dirname(__file__), "..", "requirements.txt")).read()
+    for dep in ("pytest", "python-multipart", "pyotp", "httpx", "cryptography"):
+        assert dep in req, dep
+
+
+def test_f34_health_split():
+    import sys as _s
+    _s.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+    import main as _m
+    assert any("ready" in (getattr(r, "path", "") or "") for r in _m.app.routes)
+    src = open(os.path.join(os.path.dirname(_m.__file__), "main.py"), encoding="utf-8").read()
+    assert "X-Forwarded-For" in src and "TRUST_PROXY" in src

@@ -31,6 +31,39 @@ def env_file() -> str:
     return os.path.join(base(), ".env")
 
 
+import json as _json
+import tempfile as _tf
+
+_write_lock = None
+
+
+def _lock():
+    global _write_lock
+    if _write_lock is None:
+        import threading as _th
+        _write_lock = _th.RLock()
+    return _write_lock
+
+
+def atomic_write_json(path: str, obj) -> None:
+    """F09: crash-safe store writes — temp file + fsync + atomic rename, serialized.
+    A killed process leaves either the old file or the new file, never half JSON."""
+    with _lock():
+        fd, tmp = _tf.mkstemp(dir=os.path.dirname(os.path.abspath(path)), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                _json.dump(obj, f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+            raise
+
+
 def safe_join(*parts: str, root: str = "") -> str:
     """One path policy for the whole backend (F14): resolved, symlink-aware,
     jail-contained. Raises ValueError on escape. `root` defaults to workspace."""

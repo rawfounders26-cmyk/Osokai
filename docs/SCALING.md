@@ -1,5 +1,13 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## code-review batch 4 — ✅ DONE: reproducible delivery (F07–F12, F24, F30–F34)
+- [x] **F08**: nonstandard Caddy `rate_limit` removed (backend limiter owns it); CI validates the Caddyfile.
+- [x] **F09/F10**: vault + connector stores moved to the data dir (one-time migration, atomic writes); dev compose mounts `/data` correctly.
+- [x] **F11**: backups encrypted (Fernet), volume-resolved, integrity-gated, fail loudly; restore has `--drill` + WAL cleanup.
+- [x] **F30/F33/F24**: placeholder `__init__.py` files fixed; `.dockerignore` keeps secrets/state out of images; Flutter identifier fixed.
+- [x] **F32**: test deps declared (pytest/pyotp/multipart); vault key supplied in CI; Caddy + docker build gated.
+- [x] **F34**: liveness vs readiness split (`/health` vs `/ready` write-probe); proxy-aware IPs; bounded limiter; structured failure logs.
+
 ## code-review batch 3 — ✅ DONE: truthful execution (F07, F12, F17–F19, F31)
 - [x] **F07**: voice endpoint binds multipart properly (`UploadFile = File(...)`), type/size validated, Groq call off the event loop, `python-multipart` declared.
 - [x] **F12**: OAuth single-use state binds provider+device (10-min TTL); callback stateless without it; stale per-connector callback URL fixed.
@@ -141,5 +149,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 104 nightly evals gating every release — reliability story.
+- 112 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

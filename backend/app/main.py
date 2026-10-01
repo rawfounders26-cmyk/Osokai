@@ -67,24 +67,40 @@ OSOKAI_VERSION = "0.6.0"
 import uuid as _uuid
 from fastapi.responses import JSONResponse as _JSONResponse
 _rl_hits: dict = {}
+_RL_MAX_IPS = 5000
+_TRUST_PROXY = os.getenv("TRUST_PROXY", "") == "1"  # set behind Caddy/Nginx
+
+def _client_ip(request: Request) -> str:
+    if _TRUST_PROXY:
+        fwd = (request.headers.get("X-Forwarded-For", "") or "").split(",")[0].strip()
+        if fwd:
+            return fwd
+    return request.client.host if request.client else "?"
 
 @app.middleware("http")
 async def _reliability(request: Request, call_next):
+    import json as _jj
     rid = _uuid.uuid4().hex[:8]
-    ip = request.client.host if request.client else "?"
+    ip = _client_ip(request)
     now = time.time()
     heavy = request.url.path.startswith(("/chat", "/goaltrees/tasks", "/research"))
     limit, window = (60, 60) if heavy else (600, 60)
     bucket = _rl_hits.setdefault(ip, [])
     while bucket and bucket[0] < now - window:
         bucket.pop(0)
+    if len(_rl_hits) > _RL_MAX_IPS:
+        for k in list(_rl_hits)[: len(_rl_hits) - _RL_MAX_IPS]:
+            _rl_hits.pop(k, None)
     if len(bucket) >= limit:
+        print(_jj.dumps({"t": "rate_limited", "rid": rid, "ip": ip, "path": request.url.path}), flush=True)
         return _JSONResponse({"detail": "rate limited — slow down"}, status_code=429,
                              headers={"X-Request-Id": rid})
     bucket.append(now)
     try:
         resp = await call_next(request)
-    except Exception:
+    except Exception as e:
+        print(_jj.dumps({"t": "unhandled", "rid": rid, "path": request.url.path,
+                         "err": f"{type(e).__name__}: {e}"[:200]}), flush=True)
         return _JSONResponse({"detail": "internal error", "request_id": rid}, status_code=500)
     resp.headers["X-Request-Id"] = rid
     return resp
@@ -155,12 +171,7 @@ def need_auth(request: Request, authorization: str = Header(default="")):
     want = os.getenv("OSOKAI_AUTH_TOKEN", "")
     if not want:
         return  # no token configured -> open (dev)
-    ip = "?"
-    try:
-        if request.client:
-            ip = request.client.host
-    except Exception:
-        pass
+    ip = _client_ip(request)
     now = time.time()
     rec = _fails.get(ip, {"n": 0, "until": 0})
     if rec["until"] > now:
@@ -177,24 +188,36 @@ def need_auth(request: Request, authorization: str = Header(default="")):
 
 @app.get("/health")
 def health():
-    db_ok, disk_mb = True, -1
+    """Liveness: process is up. Cheap, unauthenticated (load balancers)."""
+    return {"ok": True, "service": "Osok-AI", "version": OSOKAI_VERSION}
+
+
+@app.get("/ready")
+def ready():
+    """Readiness: can actually serve (db write probe + disk). F34: never claim
+    ready on a dead store."""
+    import time as _t
+    checks = {"db_write": False, "disk_free_mb": -1}
     try:
-        mem.db.execute("SELECT 1").fetchone()
-    except Exception:
-        db_ok = False
+        mem.db.execute("CREATE TABLE IF NOT EXISTS _probe(id INTEGER PRIMARY KEY, ts REAL)")
+        mem.db.execute("INSERT INTO _probe(ts) VALUES(?)", (_t.time(),))
+        mem.db.execute("DELETE FROM _probe WHERE ts<?", (_t.time() - 60,))
+        mem.db.commit()
+        checks["db_write"] = True
+    except Exception as e:
+        checks["db_error"] = f"{type(e).__name__}"
     try:
         import shutil as _sh
-        from app.paths import data as _pd
-        disk_mb = round(_sh.disk_usage(os.path.dirname(_pd("x")) or ".").free / 1024 / 1024)
-    except Exception:
         try:
-            import shutil as _sh2
-            from paths import data as _pd2
-            disk_mb = round(_sh2.disk_usage(os.path.dirname(_pd2("x")) or ".").free / 1024 / 1024)
-        except Exception:
-            pass
-    return {"ok": True, "service": "Osok-AI", "supabase": bool(os.getenv("SUPABASE_URL", "").startswith("http")),
-            "auth": bool(os.getenv("OSOKAI_AUTH_TOKEN", "")), "db": db_ok, "disk_free_mb": disk_mb,
+            from app.paths import data as _pd
+        except ImportError:
+            from paths import data as _pd
+        checks["disk_free_mb"] = round(_sh.disk_usage(os.path.dirname(_pd("x")) or ".").free / 1024 / 1024)
+    except Exception:
+        pass
+    ok = bool(checks["db_write"])
+    return {"ok": ok, "service": "Osok-AI", "supabase": bool(os.getenv("SUPABASE_URL", "").startswith("http")),
+            "auth": bool(os.getenv("OSOKAI_AUTH_TOKEN", "")), **checks,
             "version": OSOKAI_VERSION}
 
 @app.post("/system/open")

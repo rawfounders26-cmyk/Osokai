@@ -19,7 +19,26 @@ PROVIDERS = {
     "slack": {"name": "Slack", "color": "#4A154B", "open_url": "https://slack.com/signin",
               "auth_kind": "oauth", "hint": "Add SLACK_CLIENT_ID in backend/.env for real OAuth; MVP accepts pasted token via /connect"},
 }
-VAULT = os.path.join(os.path.dirname(__file__), "..", "vault.json")
+try:
+    from app.paths import data as _pdata, atomic_write_json as _atomic_json
+except ImportError:
+    from paths import data as _pdata, atomic_write_json as _atomic_json
+
+# F09: connector store lives in the persistent data dir (survives container replacement)
+VAULT = _pdata("connector_vault.json")
+
+
+def _migrate_store():
+    legacy = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "vault.json"))
+    try:
+        if not os.path.isfile(os.path.normpath(VAULT)) and os.path.isfile(legacy):
+            import shutil as _sh
+            _sh.copy2(legacy, os.path.normpath(VAULT))
+    except Exception:
+        pass
+
+
+_migrate_store()
 
 _cache = {"mtime": 0, "data": {}}
 
@@ -36,7 +55,8 @@ def _load():
         return {}
 
 def _save(d):
-    json.dump(d, open(os.path.normpath(VAULT), "w"))
+    _atomic_json(os.path.normpath(VAULT), d)
+    _cache.update(mtime=0, data=d)
 
 def _shape(cid: str, entry: dict):
     meta = PROVIDERS[cid]

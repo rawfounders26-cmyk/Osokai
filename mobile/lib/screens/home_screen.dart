@@ -22,7 +22,7 @@ class _H extends State<HomeScreen> {
         briefing = (inbox['summary']?['briefing'] ?? '').toString();
         running = ((t['running'] ?? []) as List).length;
       });
-    } catch (e) { setState(() => status = 'backend offline: $apiBase'); }
+    } catch (e) { setState(() => status = 'backend offline: ${OsokaiApi.base}'); }
   }
   @override Widget build(BuildContext context) => RefreshIndicator(
     onRefresh: _load,

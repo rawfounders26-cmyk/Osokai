@@ -1,0 +1,17 @@
+# F33: never bake secrets, state, or build output into images
+backend/.env
+backend/*.db
+backend/*.db-wal
+backend/*.db-shm
+backend/*.db-journal
+backend/vault_secrets.json
+backend/vault.json
+backend/__pycache__/
+backend/build/
+backend/dist/
+backend/*.spec
+backend/workspace/
+backend/osokai-server
+*.log
+.git/
+vendor/
