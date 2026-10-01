@@ -47,18 +47,20 @@ def _token() -> str:
 
 
 def _call(method: str, payload: dict):
-    import httpx as _hx
     tok = _token()
     if not tok:
         return {"ok": False, "error": "no Telegram token: paste bot token via /connectors/telegram/connect"}
     try:
-        r = _hx.post(f"{API}{tok}/{method}", json=payload, timeout=30)
-        d = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
-        if r.status_code != 200 or d.get("ok") is not True:
-            return {"ok": False, "error": f"telegram rejected: {r.status_code} {(d.get('description') or r.text)[:150]}"}
-        return {"ok": True, "result": d.get("result", {})}
-    except Exception as e:
-        return {"ok": False, "error": f"telegram call failed: {e}"[:200]}
+        from app.transport import call as _tcall
+    except ImportError:
+        from transport import call as _tcall
+    r = _tcall("telegram", "POST", f"{API}{tok}/{method}", json_body=payload)
+    if not r.get("ok"):
+        return r
+    d = r.get("data", {}) or {}
+    if d.get("ok") is not True:
+        return {"ok": False, "error": f"telegram rejected: {(d.get('description') or '')[:150]}"}
+    return {"ok": True, "result": d.get("result", {})}
 
 
 def send(chat_id: str, text: str) -> dict:

@@ -1799,3 +1799,40 @@ def test_youtube_rss_live():
     r = youtube.latest_videos("UC_x5XG1OV2P6uZZ5FSM9Ttw", 3)  # live: either videos or clean error
     assert (r["ok"] and r["videos"] and r["videos"][0]["url"].startswith("https://youtu.be/")) or \
            (not r["ok"] and "error" in r)
+
+# ---- connector scale evals: transport, cache, breaker, webhooks ----
+
+def test_transport_retry_breaker_cache(tmp_path, monkeypatch):
+    import transport
+    monkeypatch.setattr(transport, "DB", str(tmp_path / "tr.db"))
+    assert transport.health() == []
+    from transport import call, breaker_state, cached_get, health
+    # breaker trips after failures to an unreachable port, then fails fast
+    r = call("probe-dead", "GET", "http://127.0.0.1:9/nope", retries=0)
+    assert r["ok"] is False
+    assert breaker_state("probe-dead")["until"] > 0
+    r2 = call("probe-dead", "GET", "http://127.0.0.1:9/nope", retries=0)
+    assert "circuit open" in r2["error"]
+    h = health("probe-dead")
+    assert h and h[0]["calls"] >= 1 and h[0]["circuit"] == "open"
+
+
+def test_webhook_verify_gates(tmp_path, monkeypatch):
+    import hashlib as _h
+    import hmac as _hm
+    import webhooks
+    assert webhooks.verify("github", b"{}", {})["ok"] is False  # no secret, no event
+    assert webhooks.verify("github", b"{}", {"x-hub-signature-256": "sha256=zzz"})["ok"] is False
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", "s3cr3t")
+    raw = b'{"action":"opened"}'
+    good = "sha256=" + _hm.new(b"s3cr3t", raw, _h.sha256).hexdigest()
+    assert webhooks.verify("github", raw, {"x-hub-signature-256": good})["ok"] is True
+    assert webhooks.verify("github", raw, {"x-hub-signature-256": "sha256=nope"})["ok"] is False
+    assert webhooks.verify("telegram", b"{}", {})["ok"] is False
+
+
+def test_connector_endpoints_list(tmp_path, monkeypatch):
+    import connectors
+    ids = [c["id"] for c in connectors.list_connectors()]
+    for want in ("telegram", "github", "razorpay", "whatsapp_business", "youtube", "x", "linkedin"):
+        assert want in ids, want

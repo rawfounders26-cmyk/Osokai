@@ -26,6 +26,7 @@ TYPES = (
     "bill.expense_added", "bill.settle_reminder",
     "task.completed", "task.failed",
     "social.published",
+    "github.webhook", "telegram.webhook", "connector.webhook",
 )
 
 

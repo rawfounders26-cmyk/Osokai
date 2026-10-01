@@ -46,14 +46,18 @@ def send_text(to_e164: str, text: str) -> dict:
     tok, pid = _token(), _phone_id()
     if not tok or not pid:
         return {"ok": False, "error": "no WhatsApp creds: set WHATSAPP_TOKEN + WHATSAPP_PHONE_ID"}
-    import httpx as _hx
     try:
-        r = _hx.post(f"{API}/{pid}/messages", headers={"Authorization": f"Bearer {tok}"},
-                      json={"messaging_product": "whatsapp", "to": to,
-                            "type": "text", "text": {"body": text[:4000]}}, timeout=30)
-        d = r.json() if "json" in r.headers.get("content-type", "") else {}
-        if r.status_code != 200 or not (d.get("messages") or []):
-            return {"ok": False, "error": f"whatsapp rejected: {r.status_code} {r.text[:150]}"}
-        return {"ok": True, "message_id": (d["messages"][0] or {}).get("id", "")}
-    except Exception as e:
-        return {"ok": False, "error": f"whatsapp call failed: {e}"[:200]}
+        from app.transport import call as _tcall
+    except ImportError:
+        from transport import call as _tcall
+    r = _tcall("whatsapp", "POST", f"{API}/{pid}/messages",
+               headers={"Authorization": f"Bearer {tok}"},
+               json_body={"messaging_product": "whatsapp", "to": to,
+                          "type": "text", "text": {"body": text[:4000]}})
+    if not r.get("ok"):
+        return r
+    d = r.get("data", {}) or {}
+    msgs = d.get("messages") or []
+    if not msgs:
+        return {"ok": False, "error": "whatsapp accepted but returned no message id"}
+    return {"ok": True, "message_id": (msgs[0] or {}).get("id", "")}

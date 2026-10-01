@@ -50,35 +50,40 @@ def create_order(amount_inr: float, receipt: str = "", notes: dict = None) -> di
     auth = _auth()
     if not auth:
         return {"ok": False, "error": "no Razorpay creds: paste key pair via /connectors/razorpay/connect or set RAZORPAY_KEY_ID/SECRET"}
-    import httpx as _hx
     try:
-        r = _hx.post(f"{API}/orders", headers={"Authorization": auth},
-                      json={"amount": amount_paise, "currency": "INR",
-                            "receipt": (receipt or f"osokai-{int(__import__('time').time())}")[:40],
-                            "notes": notes or {}}, timeout=30)
-        d = r.json() if "json" in r.headers.get("content-type", "") else {}
-        if r.status_code not in (200, 201) or not d.get("id"):
-            return {"ok": False, "error": f"razorpay rejected: {r.status_code} {r.text[:150]}"}
-        return {"ok": True, "order_id": d["id"], "amount_inr": amount_paise / 100,
-                "status": d.get("status", "")}
-    except Exception as e:
-        return {"ok": False, "error": f"razorpay call failed: {e}"[:200]}
+        from app.transport import call as _tcall
+    except ImportError:
+        from transport import call as _tcall
+    import time as _t
+    r = _tcall("razorpay", "POST", f"{API}/orders", headers={"Authorization": auth},
+               json_body={"amount": amount_paise, "currency": "INR",
+                          "receipt": (receipt or f"osokai-{int(_t.time())}")[:40],
+                          "notes": notes or {}})
+    if not r.get("ok"):
+        return r
+    d = r.get("data", {}) or {}
+    if not d.get("id"):
+        return {"ok": False, "error": "razorpay accepted but returned no order id"}
+    return {"ok": True, "order_id": d["id"], "amount_inr": amount_paise / 100,
+            "status": d.get("status", "")}
 
 
 def order_status(order_id: str) -> dict:
     auth = _auth()
     if not auth:
         return {"ok": False, "error": "no Razorpay creds"}
-    import httpx as _hx
     try:
-        r = _hx.get(f"{API}/orders/{order_id}", headers={"Authorization": auth}, timeout=20)
-        d = r.json() if r.status_code == 200 else {}
-        if r.status_code != 200:
-            return {"ok": False, "error": f"razorpay {r.status_code}: {r.text[:120]}"}
-        return {"ok": True, "order_id": d.get("id", ""), "status": d.get("status", ""),
-                "amount_paid_inr": (d.get("amount_paid", 0) or 0) / 100}
-    except Exception as e:
-        return {"ok": False, "error": f"razorpay call failed: {e}"[:200]}
+        from app.transport import cached_get
+    except ImportError:
+        from transport import cached_get
+    r = cached_get("razorpay", f"order:{order_id}", f"{API}/orders/{order_id}",
+                   headers={"Authorization": auth}, ttl=60)
+    if not r.get("ok"):
+        return r
+    d = r.get("data", {}) or {}
+    return {"ok": True, "order_id": d.get("id", ""), "status": d.get("status", ""),
+            "amount_paid_inr": (d.get("amount_paid", 0) or 0) / 100,
+            "cached": r.get("cached", False)}
 
 
 def collect_link(amount_inr: float, upi_id: str, note: str = "") -> dict:

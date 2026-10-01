@@ -4,7 +4,7 @@
 > until merchant-services building starts. Conversations are RAM; this file is disk.
 
 ## Where we are
-- **Version**: v0.6.0 + hardening + hygiene + hierarchy steps 1–4 COMPLETE + context engine + memory package + policy engine + capability router + benchmark harness + persistent specialists + review batches 1–4 + learned memory + fortify round + social connectors + connectors tier-1+2. **Tests**: 131/131 green. **Benchmark**: plan 118/118, avg interventions 0.15/goal.
+- **Version**: v0.6.0 + hardening + hygiene + hierarchy steps 1–4 COMPLETE + context engine + memory package + policy engine + capability router + benchmark harness + persistent specialists + review batches 1–4 + learned memory + fortify round + social connectors + connectors tier-1+2 + connectors 1000x. **Tests**: 134/134 green. **Benchmark**: plan 130/130, avg interventions 0.15/goal.
 - **Last shipped**: hardening (no features) — recurring double-post fix, shared WAL DB helper,
   thread-safe memory, secrets audit clean, deep health, input clamps, 3 hardening evals.
 - **Before that**: v0.6 platform · v0.5 · v0.4.x (outfit + bills, mobile screens, cloud pack) ·
@@ -61,6 +61,8 @@
 #    cross-device handoff, SLM weights drop-in, merchant-services Phase 1.
 
 ## Session log
+- 2026-10-01: connectors 1000x shipped (pooled transport, breakers, cache, webhooks,
+  5 modules migrated, unsigned rejected live) → 134 tests, plan 130/130.
 - 2026-10-01: connectors tier-1+2 shipped (telegram, calendar depth, github, razorpay,
   whatsapp business, youtube RSS; 12 providers; 5 real bugs caught) → 131 tests, plan 118/118.
 - 2026-10-01: social connectors shipped (manifests, mock/x/linkedin, idempotent gated

@@ -28,23 +28,21 @@ def _token() -> str:
 
 
 def _get(path: str, params: dict = None):
-    import httpx as _hx
     tok = _token()
     if not tok:
         return {"ok": False, "error": "no GitHub token: paste via /connectors/github/connect or set GITHUB_TOKEN"}
     try:
-        r = _hx.get(f"{API}{path}",
-                    headers={"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json"},
-                    params=params or {}, timeout=30)
-        if r.status_code == 401:
+        from app.transport import call as _call
+    except ImportError:
+        from transport import call as _call
+    r = _call("github", "GET", f"{API}{path}",
+              headers={"Authorization": f"Bearer {tok}", "Accept": "application/vnd.github+json"},
+              params=params or {})
+    if not r.get("ok"):
+        if r.get("status") == 401:
             return {"ok": False, "error": "GitHub token rejected (401)"}
-        if r.status_code == 403 and "rate limit" in r.text.lower():
-            return {"ok": False, "error": "GitHub rate limited — try later"}
-        if r.status_code not in (200, 201):
-            return {"ok": False, "error": f"github {r.status_code}: {r.text[:150]}"}
-        return {"ok": True, "data": r.json()}
-    except Exception as e:
-        return {"ok": False, "error": f"github call failed: {e}"[:200]}
+        return r
+    return {"ok": True, "data": r["data"]}
 
 
 def repos(limit: int = 10):

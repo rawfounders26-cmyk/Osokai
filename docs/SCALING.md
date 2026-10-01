@@ -1,5 +1,10 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## connectors 1000x — ✅ DONE: pooled transport, breakers, cache, webhooks, metrics
+- [x] `app/transport.py`: process-wide pooled client, retries with backoff, per-provider circuit breakers, read-through cache, latency/fail metrics into usage + health endpoint.
+- [x] All 5 HTTP modules migrated (github/telegram/whatsapp/razorpay; youtube stays raw-XML). Webhook receiver: signature-verified, bus-normalized, 403s the unsigned.
+- [x] Mobile per-ID ack + health wrappers. Battery 118→130 tasks, plan 100/100. 3 new evals (breaker trips + fails fast, webhook gates, 12-provider registry).
+
 ## connectors tier-1 + tier-2 — ✅ DONE: 12 providers, chat-driven, approval-gated
 - [x] **Tier-1**: Telegram (send + inbound poll worker), calendar depth (free-busy, conflicts, invites with drafted emails), GitHub (repos/issues/CI/brief).
 - [x] **Tier-2**: Razorpay orders (dispatcher-bound, exact amount) + no-creds UPI collect links, WhatsApp Business sends, YouTube RSS reads (live, no key) — verified with real videos.
@@ -176,5 +181,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 131 nightly evals gating every release — reliability story.
+- 134 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

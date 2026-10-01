@@ -505,6 +505,10 @@ export const payCollect = (amount, upi_id = '', note = '') =>
 export const ytLatest = (channel, limit = 8) =>
   get(`/youtube/latest?channel=${encodeURIComponent(channel)}&limit=${limit}`).then(j => j.videos || []);
 
+// connector-scale surfaces: per-ID ack + provider health
+export const devicesAck = (device, ids) => post('/devices/ack', { device, ids });
+export const connHealth = () => get('/connectors/health').then(j => j.providers || []);
+
 // persistent specialists surfaces
 export const specSeed = () => post('/specialists/seed', {});
 export const specList = () => get('/specialists').then(j => j.specialists || []);

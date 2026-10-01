@@ -35,7 +35,7 @@ def latest_videos(channel: str, limit: int = 8):
     cid = _channel_id(channel)
     if not cid:
         return {"ok": False, "error": "need a channel ID or channel URL (handles need resolving first)"}
-    import httpx as _hx
+    import httpx as _hx  # raw fetch: RSS is XML, not JSON (transport is JSON-oriented)
     try:
         r = _hx.get("https://www.youtube.com/feeds/videos.xml",
                     params={"channel_id": cid}, timeout=20,

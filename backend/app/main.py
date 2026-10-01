@@ -2387,6 +2387,36 @@ def youtube_latest(channel: str, limit: int = 8, _=Depends(need_auth)):
         raise HTTPException(status_code=400, detail=r.get("error", "feed failed"))
     return r
 
+@app.post("/connectors/{cid}/webhook")
+async def connector_webhook(cid: str, request: Request, _=Depends(need_auth)):
+    """Inbound provider events: signature-verified, then normalized to the bus.
+    No signature, no event — unauthenticated POSTs never become agent facts."""
+    try:
+        from app import webhooks as _wh
+    except ImportError:
+        import webhooks as _wh
+    raw = await request.body()
+    v = _wh.verify(cid, raw, dict(request.headers))
+    if not v.get("ok"):
+        raise HTTPException(status_code=403, detail=v.get("reason", "unverified"))
+    try:
+        import json as _jj
+        payload = _jj.loads(raw.decode() or "{}")
+    except Exception:
+        raise HTTPException(status_code=400, detail="bad JSON")
+    r = _wh.ingest(cid, payload)
+    await hub.push()
+    return r
+
+@app.get("/connectors/health")
+def connectors_health(provider: str = "", _=Depends(need_auth)):
+    """Per-provider reliability: calls, fail rate, latency, circuit state."""
+    try:
+        from app.transport import health
+    except ImportError:
+        from transport import health
+    return {"providers": health(provider)}
+
 @app.post("/bills/receipt")
 async def bills_receipt(payload: dict, _=Depends(need_auth)):
     """Receipt scan: {image_b64} -> draft expense. Confirm via POST /bills/expenses."""
