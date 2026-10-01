@@ -1,0 +1,26 @@
+# Research: destinations-international-2026
+
+QUERY: destinations-international-2026
+1. 2026 Annual Convention | Destinations International — https://destinationsinternational.org/2026-annual-convention
+   Join 2,000+ destination marketing and management leaders in Portland, OR for the industry&#x27;s premier gathering of strategy, solutions, and peer connection. EXPLORE: Solutions for Today. Strategies for Tomorrow. This year&#x27;s Annual Convention brings together the leaders tackling today&#x27;s most pressing challenges and shaping what&#x27;s next for destination organizations. Over three high-impact ...
+2. 2026 Annual Convention - Destinations International — https://community.destinationsinternational.org/events/event-description?CalendarEventKey=b7de1fc6-5541-4213-bb17-019cd5f7878c&amp;hlmlt=ED
+   HOTEL INFORMATION Destinations International is pleased to offer a variety of hotel accommodations to meet all attendee needs. For those staying downtown across the bridge, we will offer shuttle service. The hotel cutoff date is Thursday, June 25, 2026, at 5:00 PM Pacific Time.
+3. Upcoming Events - Destinations International — https://destinationsinternational.org/upcoming-events
+   Discover upcoming professional development and networking events for destination marketing and management professionals, including summits, courses, and the Annual Convention by Destinations International, designed to educate, connect, and strengthen the global destination community.
+4. 2026 CDME Fall - Destinations International — https://community.destinationsinternational.org/events/event-description?CalendarEventKey=2b511de7-7c60-41d0-8c05-019f263b06cb&amp;Home=%2fevents%2fcalendar
+   The Certified Destination Management Executive (CDME) program prepares senior executives and experienced destination organization professionals to lead their communities and to thrive in a constantly changing environment. The CDME is a credential program designed by Destinations International. An approved CDME Application is required prior to registering for courses. Please allow 10-1
+
+---
+
+SOURCE https://destinationsinternational.org/2026-annual-convention
+ Just a moment... Enable JavaScript and cookies to continue 
+
+---
+
+SOURCE https://community.destinationsinternational.org/events/event-description?CalendarEventKey=b7de1fc6-5541-4213-bb17-019cd5f7878c&amp;hlmlt=ED
+ 2026 Annual Convention - Destinations International &nbsp;&nbsp; Skip main navigation (Press Enter). Log in Toggle navigation Home Discussions All Communities My Communities Directories Member Directory Resources Destinations International Blog Browse Discussion Posts Library Entries Log in 2026 Annual Convention &times; When:&nbsp; Tue, Jul 21, 2026 from 08:30 to 20:00 (ET) Your local time:&nbsp; EXPLORE: Solutions for Today. Strategies for Tomorrow. brings together the leaders tackling today’s most pressing challenges and shaping what’s next for destination organizations. Over three high-impact days, you’ll engage with peers redefining revenue growth, strengthening community trust, building resilient teams and delivering measurable results. Set in a city known for bold thinking and purposeful innovation, this year’s Annual Convention delivers practical insight, real-world case studies and actionable takeaways you can implement immediately — alongside the connections that will support you long after you leave. Come ready to engage. Leave ready to lead. REGISTRATION RATES All pricing in US dollars. Early Bird (through Thursday, April 9) Standard Rate (starting Friday, April 10) Last Chance Rate (starting Friday, June 26) Member CVB $1,195 $1,395 $1,545 Member CVB Bundle $1,095/pp N/A N/A Non-Member/Non-Partner Base Price $2,095 $2,245 Partners $1,695 Educational Institute $1,395 Student $350 Guest $350 Registration Type Eligibility Requirements&nbsp; Member Early Bird Bundle · &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Qualifications and criteria for bundle pricing are below. Code needed to receive the discount:&nbsp;26ACBUNDLE o &nbsp;&nbsp; Destination MUST currently hold an active membership. o &nbsp;&nbsp; Destination MUST register through their organization account. o &nbsp;&nbsp; Destination MUST register all attending staff at one time. o &nbsp;&nbsp; Destination MUST register a minimum of five (5) staff. o &nbsp;&nbsp; This rate is ONLY applicable during early bird (through April 2, 2026). · &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Refunds are not applicable; substitutions will be considered. · &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; The destination will be billed for any applicable adjustments if the above requirements are not met throughout the registration process. Students · &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; This opportunity is available exclusively through Destinations International members and partners. 
+
+---
+
+SOURCE https://destinationsinternational.org/upcoming-events
+ Just a moment... Enable JavaScript and cookies to continue 

@@ -56,13 +56,21 @@ def list_connectors():
     v = _load()
     return [_shape(cid, v.get(cid, {})) for cid in PROVIDERS]
 
-def auth_url(cid: str):
+def auth_url(cid: str, device: str = "unknown"):
     if cid not in PROVIDERS:
         return {"auth_url": "", "hint": "unknown connector"}
-    base = os.getenv("API_PUBLIC_URL", "http://127.0.0.1:8765")
     meta = PROVIDERS[cid]
     if meta["auth_kind"] == "oauth":
-        return {"auth_url": f"{base}/connectors/{cid}/callback?code=PASTE_CODE_HERE", "hint": meta["hint"]}
+        try:
+            try:
+                from app.oauth import authorize_url, new_state
+            except ImportError:
+                from oauth import authorize_url, new_state
+            st = new_state(cid, device)
+            return {"auth_url": authorize_url(cid, st), "hint": meta["hint"],
+                    "note": "login link expires in 10 min and works once (login-CSRF safe)"}
+        except RuntimeError as e:
+            return {"auth_url": "", "hint": str(e)}
     return {"auth_url": "", "hint": meta["hint"]}
 
 def connect(cid: str, payload: dict):

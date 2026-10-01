@@ -1,0 +1,4 @@
+# Research: Top 10 domestic + international travel destinations 2025/2026 for an Indian traveler: costs (flights, stay, food), visa requirements, best season, day-by-day sample itinerary, hidden gems, off-beat picks (e.g. Coorg, Majuli, Spiti, Rann of Kutch, Bali, Langkawi, Luang Prabang, Nepal), budget estimates per destination in INR, and comparison table
+
+QUERY: Top 10 domestic + international travel destinations 2025/2026 for an Indian traveler: costs (flights, stay, food), visa requirements, best season, day-by-day sample itinerary, hidden gems, off-beat picks (e.g. Coorg, Majuli, Spiti, Rann of Kutch, Bali, Langkawi, Luang Prabang, Nepal), budget estimates per destination in INR, and comparison table
+(no results)

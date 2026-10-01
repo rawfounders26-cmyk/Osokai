@@ -11,17 +11,18 @@ import json
 
 def _validate(step: dict):
     try:
-        from app.actions import validate
-    except ImportError:
         from actions import validate
+    except ImportError:
+        from app.actions import validate
     return validate([step])
 
 
 def _mem():
+    # top-level first (tests + app-cwd), app.* fallback (server): one copy per env
     try:
-        from app.memory import Memory
-    except ImportError:
         from memory import Memory
+    except ImportError:
+        from app.memory import Memory
     return Memory()
 
 
@@ -57,9 +58,9 @@ def execute_approved(approval_id: int, action: str, args: dict = None, device: s
     if a["status"] != "allowed":
         return {"ok": False, "error": "no granted approval for this execution"}
     try:
-        from app.verify import execute as _exec
-    except ImportError:
         from verify import execute as _exec
+    except ImportError:
+        from app.verify import execute as _exec
     out = _exec({"action": action, "args": args}, device)
     try:
         # single atomic UPDATE is self-consistent; no lock needed

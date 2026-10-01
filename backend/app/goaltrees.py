@@ -181,9 +181,9 @@ def get_tree(gid: int):
     if not g:
         return None
     out = {"id": g[0], "title": g[1], "source": g[2], "objectives": [], "progress": 0}
-    nt = nd = 0
+    nt = nd = nw = 0
     for oid, title in db.execute("SELECT id, title FROM objectives WHERE gid=? ORDER BY pos", (gid,)):
-        o = {"id": oid, "title": title, "projects": [], "done": 0, "total": 0}
+        o = {"id": oid, "title": title, "projects": [], "done": 0, "total": 0, "waiting": 0}
         for pid, pt in db.execute("SELECT id, title FROM projects WHERE oid=? ORDER BY pos", (oid,)):
             p = {"id": pid, "title": pt, "tasks": []}
             for tid, tt, kind, st, res in db.execute(
@@ -198,9 +198,13 @@ def get_tree(gid: int):
                 if st == "done":
                     o["done"] += 1
                     nd += 1
+                elif st in ("waiting", "doing"):
+                    o["waiting"] += 1
+                    nw += 1
             o["projects"].append(p)
         out["objectives"].append(o)
     out["progress"] = round(100 * nd / max(1, nt))
+    out["waiting"] = nw
     return out
 
 
@@ -210,8 +214,9 @@ def list_trees():
     for gid, title, source in db.execute("SELECT id, title, source FROM goal_trees ORDER BY id DESC"):
         tot = db.execute("SELECT COUNT(*) FROM gtasks WHERE pid IN (SELECT id FROM projects WHERE oid IN (SELECT id FROM objectives WHERE gid=?))", (gid,)).fetchone()[0]
         done = db.execute("SELECT COUNT(*) FROM gtasks WHERE status='done' AND pid IN (SELECT id FROM projects WHERE oid IN (SELECT id FROM objectives WHERE gid=?))", (gid,)).fetchone()[0]
+        waiting = db.execute("SELECT COUNT(*) FROM gtasks WHERE status IN ('waiting','doing') AND pid IN (SELECT id FROM projects WHERE oid IN (SELECT id FROM objectives WHERE gid=?))", (gid,)).fetchone()[0]
         out.append({"id": gid, "title": title, "source": source, "total": tot, "done": done,
-                    "progress": round(100 * done / max(1, tot))})
+                    "waiting": waiting, "progress": round(100 * done / max(1, tot))})
     return out
 
 

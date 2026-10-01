@@ -3,7 +3,7 @@ import { useState, useCallback } from 'react';
 import { View, Text, TextInput, StyleSheet, FlatList, RefreshControl, Alert, TouchableOpacity, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
-import { getFiles } from '../services/api';
+import { getFiles, readFile } from '../services/api';
 import { colors, radius, spacing } from '../services/theme';
 
 async function gapi(path, opts = {}) {
@@ -64,6 +64,7 @@ export default function FilesScreen() {
   const [openGid, setOpenGid] = useState(null);
   const [tree, setTree] = useState(null);
   const [ref, setRef] = useState(false);
+  const [preview, setPreview] = useState(null);
 
   const loadFiles = useCallback(async (p) => {
     try {
@@ -133,14 +134,24 @@ export default function FilesScreen() {
           <FlatList data={entries} keyExtractor={(_, i) => `${i}`}
             refreshControl={<RefreshControl refreshing={ref} onRefresh={() => { setRef(true); loadFiles(path); }} />}
             ListEmptyComponent={<Text style={s.sub}>empty — ask Osok-AI to create folders/files</Text>}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                disabled={!item.dir}
-                onPress={() => loadFiles(path ? `${path}/${item.name}` : item.name)}
-              >
-                <Text style={s.row}>{item.dir ? '📁' : '📄'} {item.name}</Text>
-              </TouchableOpacity>
-            )} />
+            renderItem={({ item }) => {
+              const full = path ? `${path}/${item.name}` : item.name;
+              const isOpen = preview && preview.path === full;
+              return (
+                <View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (item.dir) { setPreview(null); loadFiles(full); }
+                      else if (isOpen) setPreview(null);
+                      else readFile(full).then(j => setPreview({ path: full, content: j.content || '' })).catch(e => Alert.alert('error', `${e.message}`));
+                    }}
+                  >
+                    <Text style={s.row}>{item.dir ? '📁' : '📄'} {item.name}</Text>
+                  </TouchableOpacity>
+                  {isOpen && <Text style={s.preview}>{preview.content.slice(0, 3000)}</Text>}
+                </View>
+              );
+            }} />
         </>
       ) : (
         <ScrollView
@@ -182,6 +193,7 @@ const s = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '800', color: colors.text, marginBottom: 8 },
   up: { color: colors.primary, fontSize: 15, marginBottom: 6 },
   row: { color: colors.text, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+  preview: { color: colors.sub, fontSize: 12, backgroundColor: colors.surface, borderRadius: radius.sm, padding: 10, marginBottom: 8 },
   sub: { color: colors.sub },
   sect: { color: '#fff', fontSize: 15, fontWeight: '800', marginTop: 6 },
   input: { backgroundColor: colors.surface, color: colors.text, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: 12 },

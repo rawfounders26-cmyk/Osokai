@@ -79,7 +79,8 @@ def test_proactive_nudge_dedup(tmp_path, monkeypatch):
     assert proactive.list_nudges() == []
 
 
-def test_orchestrator_critic_failopen(monkeypatch):
+def test_orchestrator_critic_failclosed(monkeypatch):
+    """F17: reviewer outage or ambiguity must HOLD work — never accept it."""
     import orchestrator
     import grok_client
     def _boom(*a, **k):
@@ -91,7 +92,10 @@ def test_orchestrator_critic_failopen(monkeypatch):
     except ImportError:
         pass
     c = orchestrator._critic("do thing", "did thing")
-    assert c["verdict"] == "accept"  # fail-open, never blocks autonomy
+    assert c["verdict"] == "unknown"  # held, not accepted
+    assert orchestrator._critic("do thing", "[osok-ai-error] boom")["verdict"] == "redo"
+    assert orchestrator._critic("do thing", "")["verdict"] == "redo"
+    assert orchestrator._critic("do thing", "   ")["verdict"] == "redo"
 
 
 def test_orchestrator_missing_goal(tmp_path, monkeypatch):
@@ -712,7 +716,7 @@ def test_verify_create_read_roundtrip(tmp_path, monkeypatch):
     ws = _paths.ws()
     probe = "verify-step3-probe.md"
     try:
-        w = verify.execute({"action": "create_file", "args": {"path": probe, "content": "# hi"}})
+        w = verify.execute({"action": "create_file", "args": {"path": probe, "content": "# hi\nReal body text here\nSecond line"}})
         assert w["ok"]
         v = verify.verify({"action": "create_file", "args": {"path": probe}}, w)
         assert v["pass"] and "exists" in v["evidence"]
@@ -738,7 +742,7 @@ def test_run_verified_retry_and_checkpoint(tmp_path, monkeypatch):
     sid = goaltrees.list_subtasks(tid)[0]["id"]
     ws, probe = _paths.ws(), "sync-note-step3-probe.md"
     try:
-        r = verify.run_verified({"action": "create_file", "args": {"path": probe, "content": "# sync"}})
+        r = verify.run_verified({"action": "create_file", "args": {"path": probe, "content": "# sync\nReal body text here\nSecond line"}})
         assert r["verified"]
         goaltrees.set_subtask(sid, "done", r["evidence"])
         got = [s for s in goaltrees.list_subtasks(tid) if s["id"] == sid][0]
@@ -1342,3 +1346,81 @@ def test_f21_no_truncate_and_f22_cleanup(tmp_path, monkeypatch):
     db.commit()
     got = relay.pull("d")  # malformed legacy row quarantined, valid rows flow
     assert all(m["id"] != 999999 for m in got)
+
+# ---- code-review batch 3 evals: truthful execution ----
+
+def test_f07_transcribe_binding():
+    import sys as _s
+    _s.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
+    import main as _m
+    import inspect as _i
+    sig = _i.signature(_m.voice_transcribe)
+    p = sig.parameters.get("file")
+    assert p is not None and p.annotation is not _i.Parameter.empty  # declared, not runtime-checked
+    req = os.path.join(os.path.dirname(__file__), "..", "requirements.txt")
+    assert "python-multipart" in open(req).read()
+
+
+def test_f12_oauth_state(tmp_path, monkeypatch):
+    import oauth
+    import sqlite3 as _s3
+    dbp = str(tmp_path / "oa.db")
+
+    def _testdb():
+        db = _s3.connect(dbp)
+        db.execute("CREATE TABLE IF NOT EXISTS oauth_states(state TEXT PRIMARY KEY, provider TEXT, device TEXT, exp REAL)")
+        return db
+
+    monkeypatch.setattr(oauth, "_states_db", _testdb)
+    st = oauth.new_state("gmail", "phone")
+    assert st and len(st) > 20
+    try:
+        oauth.new_state("nope", "phone")
+        assert False
+    except RuntimeError:
+        pass
+    got = oauth.consume_state(st)
+    assert got == {"provider": "gmail", "device": "phone"}
+    assert oauth.consume_state(st) is None  # single-use
+    assert oauth.consume_state("bogus") is None
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "sec")
+    url = oauth.authorize_url("gmail", "ST8")
+    assert "state=ST8" in url and "accounts.google.com" in url
+
+
+def test_f17_failclosed_structure():
+    import orchestrator as _o
+    import inspect as _i
+    src = _i.getsource(_o._critic) + _i.getsource(_o.auto_step)
+    assert "unknown" in src and "fail" in src.lower()
+    assert "fail-open" not in src  # the old doctrine is gone
+
+
+def test_f18_waiting_reported(tmp_path, monkeypatch):
+    import goaltrees
+    import orchestrator
+    monkeypatch.setattr(goaltrees, "DB", str(tmp_path / "w4.db"))
+    try:
+        import app.goaltrees as _ag
+        monkeypatch.setattr(_ag, "DB", str(tmp_path / "w4.db"))
+    except ImportError:
+        pass
+    gid = goaltrees.create_from_template("trip", "Probe wait")["id"]
+    t = goaltrees.get_tree(gid)
+    assert t["waiting"] == 0
+    tid = t["objectives"][1]["projects"][0]["tasks"][0]["id"]
+    goaltrees.set_task(tid, "waiting", "approval #1")
+    t = goaltrees.get_tree(gid)
+    assert t["waiting"] == 1 and t["objectives"][1]["waiting"] == 1
+    r = orchestrator.auto_step(gid, "test")
+    assert r.get("waiting") or r.get("redone") or r.get("done") or r.get("task")
+    assert "complete" not in r.get("reply", "").lower() or r.get("waiting")
+
+
+def test_f31_files_read_and_matrix(tmp_path, monkeypatch):
+    import memory
+    monkeypatch.setattr(memory, "DB", str(tmp_path / "f31.db"))
+    import os as _os
+    cap = _os.path.join(_os.path.dirname(__file__), "..", "..", "docs", "CAPABILITY.md")
+    assert _os.path.isfile(cap)

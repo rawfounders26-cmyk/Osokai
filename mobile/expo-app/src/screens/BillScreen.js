@@ -6,7 +6,7 @@ import { useFocusEffect, router } from 'expo-router';
 import { Linking } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { billGroups, billBalances, billSettle, billActivity, billSettleUp, billSetUpi,
-  billRecurringList, billRecurringAdd, billHouseLedger, billReceipt, billExpense } from '../services/api';
+  billRecurringList, billRecurringAdd, billHouseLedger, billReceipt, billExpense, billMkgroup } from '../services/api';
 import { colors, radius, spacing } from '../services/theme';
 
 export default function BillScreen() {
@@ -20,6 +20,8 @@ export default function BillScreen() {
   const [ledger, setLedger] = useState('');
   const [recs, setRecs] = useState([]);
   const [upiId, setUpiId] = useState('');
+  const [grpName, setGrpName] = useState('');
+  const [grpMembers, setGrpMembers] = useState('Me');
   const [recTitle, setRecTitle] = useState('');
   const [recAmt, setRecAmt] = useState('');
   const [recDay, setRecDay] = useState('1');
@@ -80,8 +82,17 @@ export default function BillScreen() {
     } catch (e) { Alert.alert('error', `${e.message}`); }
   };
 
-  const scanReceipt = async () => {
+  const mkGroup = async () => {
+    if (!grpName.trim()) { Alert.alert('Name the group first'); return; }
     try {
+      const members = grpMembers.split(',').map(m => m.trim()).filter(Boolean);
+      const r = await billMkgroup(grpName.trim(), members.length ? members : ['Me']);
+      setGrpName(''); setGrpMembers('Me'); setGid(r.id);
+      load();
+    } catch (e) { Alert.alert('error', `${e.message}`); }
+  };
+
+  const scanReceipt = async () => {    try {
       const res = await ImagePicker.launchImageLibraryAsync({ base64: true, quality: 0.6 });
       if (res.canceled || !res.assets?.[0]?.base64) return;
       const r = await billReceipt(res.assets[0].base64);
@@ -113,6 +124,13 @@ export default function BillScreen() {
             <Text style={s.gmem}>{(x.members || []).join(', ')}</Text>
           </TouchableOpacity>
         ))}
+        <View style={s.upiRow}>
+          <TextInput style={[s.input, s.upiGrow]} value={grpName} onChangeText={setGrpName} placeholder="New group name" placeholderTextColor={colors.sub} />
+        </View>
+        <View style={s.upiRow}>
+          <TextInput style={[s.input, s.upiGrow]} value={grpMembers} onChangeText={setGrpMembers} placeholder="Members, comma separated" placeholderTextColor={colors.sub} />
+          <TouchableOpacity style={s.upiSave} onPress={mkGroup}><Text style={s.upiT}>Create</Text></TouchableOpacity>
+        </View>
 
         {bal && bal.debts?.length > 0 && (
           <>

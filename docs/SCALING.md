@@ -1,5 +1,12 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## code-review batch 3 — ✅ DONE: truthful execution (F07, F12, F17–F19, F31)
+- [x] **F07**: voice endpoint binds multipart properly (`UploadFile = File(...)`), type/size validated, Groq call off the event loop, `python-multipart` declared.
+- [x] **F12**: OAuth single-use state binds provider+device (10-min TTL); callback stateless without it; stale per-connector callback URL fixed.
+- [x] **F17**: critic fail-CLOSED (errors/ambiguity/outage → redo/unknown, never accept); auto_step requeues held work.
+- [x] **F18**: waiting/doing counted in trees; goals with pending human work never report "complete"; heading-only and error-like artifacts fail verification.
+- [x] **F31**: `docs/CAPABILITY.md` truth matrix; mobile group creation + file read/preview (same screens).
+
 ## code-review batch 2 — ✅ DONE: no silent loss (F04–F06, F19 wired, F20–F22)
 - [x] **F04**: relay/e2e/presence pulls are read-only; per-ID ack endpoints; crashes lose nothing (25-msg loss reproduced → fixed).
 - [x] **F05**: mobile queue rewritten (full suffix, status-checked, serialized, exhausted failures surfaced) + server idempotency keys on chat (replay, never re-execute; verified live).
@@ -134,5 +141,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 99 nightly evals gating every release — reliability story.
+- 104 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

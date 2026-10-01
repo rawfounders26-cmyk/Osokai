@@ -63,8 +63,26 @@ def _next_task(gid: int):
     return {"id": r[0], "title": r[1], "kind": r[2]} if r else None
 
 
+ERROR_MARKS = ("[osok-ai-error]", "[oskai-stub]", "[stub]", "traceback (most recent", "raise ", "failed:")
+
+
+def _looks_broken(result: str) -> str:
+    low = (result or "").lower()
+    for m in ERROR_MARKS:
+        if m in low:
+            return m
+    if not (result or "").strip():
+        return "empty result"
+    return ""
+
+
 def _critic(task_title: str, result: str) -> dict:
-    """LLM judge. Fail-open: any error/ambiguity counts as accepted."""
+    """LLM judge. Fail-CLOSED (F17): errors, ambiguity, and reviewer-outages
+    all count as redo/unknown — never as accept. Reviewer availability is
+    reported separately from execution status."""
+    broken = _looks_broken(result)
+    if broken:
+        return {"verdict": "redo", "note": f"result carries failure marker ({broken}) — no LLM needed"}
     try:
         try:
             from app.grok_client import chat_with_grok
@@ -74,13 +92,16 @@ def _critic(task_title: str, result: str) -> dict:
             "You review an AI agent's task result. Task: " + task_title +
             "\nResult (may be truncated): " + (result or "")[:1500] +
             "\nReply with exactly one word first: ACCEPT or REDO. "
-            "REDO only if the result is empty, off-topic, or an error. Then one short sentence.")
-    except Exception:
-        return {"verdict": "accept", "note": "critic offline — fail-open"}
+            "REDO if the result is empty, off-topic, an error, or you are unsure. "
+            "When unsure, REDO. Then one short sentence.")
+    except Exception as e:
+        return {"verdict": "unknown", "note": f"critic unreachable ({type(e).__name__}) — held, not accepted"}
     up = (raw or "").strip().upper()
     if up.startswith("REDO"):
         return {"verdict": "redo", "note": (raw or "")[:300]}
-    return {"verdict": "accept", "note": (raw or "")[:300]}
+    if up.startswith("ACCEPT"):
+        return {"verdict": "accept", "note": (raw or "")[:300]}
+    return {"verdict": "unknown", "note": f"ambiguous verdict {raw[:80]!r} — held, not accepted"}
 
 
 def auto_step(gid: int, device: str = "orchestrator") -> dict:
@@ -108,6 +129,13 @@ def auto_step(gid: int, device: str = "orchestrator") -> dict:
         return {"ok": False, "error": "goal not found"}
     nxt = _next_task(gid)
     if not nxt:
+        # F18: no todo leaf ≠ done — waiting/doing work must be reported, not hidden
+        pending_human = [t for o in (tree.get("objectives") or []) for p in o["projects"]
+                         for t in p["tasks"] if t["status"] in ("waiting", "doing")]
+        if pending_human:
+            names = "; ".join(t["title"][:80] for t in pending_human[:3])
+            return {"ok": True, "waiting": True,
+                    "reply": f"Goal '{tree['title']}' waits on you: {len(pending_human)} item(s) ({names}). Nothing auto-completed."}
         return {"ok": True, "done": True, "reply": f"Goal '{tree['title']}' — all tasks complete."}
     if nxt["kind"] in ("approval", "human"):
         return {"ok": True, "waiting": True,
@@ -130,11 +158,12 @@ def auto_step(gid: int, device: str = "orchestrator") -> dict:
     out = _gt.run_task(nxt["id"], device)
     result = (out.get("result") or "") if isinstance(out, dict) else ""
     c = _critic(nxt["title"], result)
-    if c["verdict"] == "redo":
-        _gt.set_task(nxt["id"], "todo", "critic redo: " + c["note"])
+    if c["verdict"] in ("redo", "unknown"):
+        _gt.set_task(nxt["id"], "todo", "critic held: " + c["note"])
         _log(gid, nxt["id"], "redo", c["note"])
-        return {"ok": True, "redone": True,
-                "reply": f"Task '{nxt['title']}' didn't pass review — requeued with feedback."}
+        held = "reviewer unreachable — held for retry" if c["verdict"] == "unknown" else "didn't pass review"
+        return {"ok": True, "redone": True, "held": c["verdict"] == "unknown",
+                "reply": f"Task '{nxt['title']}' {held} — requeued, nothing marked done."}
     _log(gid, nxt["id"], "accept", c["note"])
     left = len([1 for o in (_gt.get_tree(gid) or {}).get("objectives", [])
                 for p in o["projects"] for t in p["tasks"] if t["status"] in ("todo", "failed")])
@@ -176,9 +205,12 @@ def _auto_substep(gid: int, tree: dict, task: dict, sub: dict, device: str) -> d
         if step["action"] == "notify_user" and not args.get("text"):
             args["text"] = sub["title"][:200]
         if step["action"] == "create_file" and not args.get("path"):
+            import datetime as _dt
             slug = "".join(c if c.isalnum() else "-" for c in sub["title"].lower()).strip("-")[:40] or "note"
             args["path"] = f"{slug}.md"
-            args["content"] = args.get("content", "") or f"# {sub['title']}\n"
+            args["content"] = args.get("content", "") or (
+                f"# {sub['title']}\n\nTask: {task.get('title', '')}\n"
+                f"Goal: {tree.get('title', '')}\nCreated: {_dt.datetime.now():%Y-%m-%d %H:%M}\n")
         g = _gate(step["action"], args, device)
         if not g["ok"] and g.get("waiting"):
             set_subtask(sub["id"], "waiting", f"approval #{g['approval_id']}: {step['action']}")

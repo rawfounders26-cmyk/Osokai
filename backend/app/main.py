@@ -1,7 +1,7 @@
 """Osok-AI backend — FastAPI gateway. All frontends talk here + stay in sync via /ws/sync."""
 import os, time
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPException, Depends, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Header, HTTPException, Depends, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -1838,23 +1838,32 @@ async def loops_snooze(aid: int, payload: dict = None, _=Depends(need_auth)):
     return r
 
 @app.post("/voice/transcribe")
-async def voice_transcribe(file=None, _=Depends(need_auth)):
+async def voice_transcribe(file: UploadFile = File(...), _=Depends(need_auth)):
     """Phone records, Groq whisper transcribes. Returns text ready for /chat."""
     import os as _os
     import httpx as _hx
-    from fastapi import UploadFile
-    if file is None or not isinstance(file, UploadFile):
+    import asyncio as _aio
+    if not file or not getattr(file, "filename", ""):
         raise HTTPException(status_code=400, detail="multipart field 'file' required")
+    fname = (file.filename or "voice.m4a").lower()
+    if not fname.endswith((".m4a", ".mp3", ".wav", ".ogg", ".flac", ".mp4", ".webm")):
+        raise HTTPException(status_code=400, detail="unsupported audio type")
     key = _os.getenv("GROQ_API_KEY", "") or _os.getenv("GROK_API_KEY", "")
     if not key.startswith("gsk_"):
         raise HTTPException(status_code=422, detail="voice needs a Groq (gsk_) key")
     data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="empty audio file")
     if len(data) > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="audio too large (20MB max)")
-    r = _hx.post("https://api.groq.com/openai/v1/audio/transcriptions",
-                 headers={"Authorization": f"Bearer {key}"},
-                 files={"file": (file.filename or "voice.m4a", data)},
-                 data={"model": "whisper-large-v3-turbo"}, timeout=120)
+
+    def _call():
+        return _hx.post("https://api.groq.com/openai/v1/audio/transcriptions",
+                        headers={"Authorization": f"Bearer {key}"},
+                        files={"file": (file.filename or "voice.m4a", data)},
+                        data={"model": "whisper-large-v3-turbo"}, timeout=120)
+
+    r = await _aio.to_thread(_call)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail=f"transcribe failed: {r.text[:200]}")
     return {"ok": True, "text": r.json().get("text", "")}
@@ -1880,13 +1889,38 @@ def history_month(month: str = "", _=Depends(need_auth)):
 def files(path: str = "", _=Depends(need_auth)):
     return {"path": path, "workspace": mem.list_files(path), "entries": mem.list_entries(path)}
 
+@app.get("/files/read")
+def files_read(path: str, _=Depends(need_auth)):
+    """Read a text file's content (F31: complete the browse→open flow). No new screens needed."""
+    try:
+        from app.paths import safe_join as _sj
+    except ImportError:
+        from paths import safe_join as _sj
+    if not path:
+        raise HTTPException(status_code=400, detail="path required")
+    try:
+        fp = _sj(path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not os.path.isfile(fp):
+        raise HTTPException(status_code=404, detail="not a file")
+    if os.path.getsize(fp) > 200 * 1024:
+        raise HTTPException(status_code=400, detail="file too large to preview (200KB max)")
+    if not fp.lower().endswith((".md", ".txt", ".json", ".csv", ".py", ".js", ".log", ".html")):
+        raise HTTPException(status_code=400, detail="preview supports text files only")
+    try:
+        with open(fp, encoding="utf-8", errors="ignore") as f:
+            return {"path": path, "content": f.read(50000)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"read failed: {e}")
+
 @app.get("/connectors")
 def connectors(_=Depends(need_auth)):
     return {"connectors": list_connectors(), "add_more": True}
 
 @app.get("/connectors/{cid}/auth-url")
-def connector_auth(cid: str, _=Depends(need_auth)):
-    return {"id": cid, **auth_url(cid)}
+def connector_auth(cid: str, device: str = "unknown", _=Depends(need_auth)):
+    return {"id": cid, **auth_url(cid, device)}
 
 @app.post("/connectors/{cid}/connect")
 async def connector_connect(cid: str, payload: dict, _=Depends(need_auth)):
@@ -2204,16 +2238,21 @@ def browser_shot(_=Depends(need_auth)):
     return FileResponse(fp, media_type="image/png")
 
 @app.get("/connectors/callback")
-async def connector_callback(provider: str = "", code: str = ""):
-    """OAuth landing: exchanges code, encrypts tokens, marks connected. No auth header (browser redirect)."""
-    if not provider or not code:
-        raise HTTPException(status_code=400, detail="missing provider/code")
+async def connector_callback(code: str = "", state: str = "", provider: str = ""):
+    """OAuth landing: state binds provider+device (login-CSRF safe), then exchange.
+    No auth header (browser redirect) — the single-use state IS the auth."""
     try:
-        from app.oauth import exchange
+        from app.oauth import exchange, consume_state
         from app.connectors import oauth_store
     except ImportError:
-        from oauth import exchange
+        from oauth import exchange, consume_state
         from connectors import oauth_store
+    bound = consume_state(state) if state else None
+    if not bound:
+        raise HTTPException(status_code=400, detail="missing/expired login session — start again from Connectors → Connect")
+    provider = bound["provider"]
+    if not code:
+        raise HTTPException(status_code=400, detail="missing code")
     try:
         tokens = exchange(provider, code)
     except Exception as e:

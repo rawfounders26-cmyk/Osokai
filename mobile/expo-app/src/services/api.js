@@ -165,6 +165,22 @@ export async function getFiles(sub = '') {
   return res.json();
 }
 
+export async function readFile(sub) {
+  const [base, hdrs] = await Promise.all([baseUrl(), headers()]);
+  const res = await fetch(`${base}/files/read?path=${encodeURIComponent(sub)}`, { headers: hdrs });
+  if (!res.ok) await throwDetail(res, `HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function billMkgroup(name, members) {
+  const [base, hdrs] = await Promise.all([baseUrl(), headers()]);
+  const res = await fetch(`${base}/bills/groups`, {
+    method: 'POST', headers: hdrs, body: JSON.stringify({ name, members }),
+  });
+  if (!res.ok) await throwDetail(res, `HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function getInbox() {
   const [base, hdrs] = await Promise.all([baseUrl(), headers()]);
   const res = await fetch(`${base}/inbox`, { headers: hdrs });

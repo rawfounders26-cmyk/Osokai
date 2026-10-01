@@ -108,8 +108,15 @@ def execute(step: dict, device: str = "verify"):
     return {"ok": False, "evidence": "unreachable"}
 
 
+def _looks_like_error(text: str) -> bool:
+    low = (text or "").lower()
+    return any(m in low for m in ("[osok-ai-error]", "[oskai-stub]", "traceback (most recent",
+                                  "failed:", "error:", "timed out", "connection refused", "404", "500"))
+
+
 def verify(step: dict, exec_out: dict):
-    """Re-read world state. Returns {pass, evidence}. Independent of execute()."""
+    """Re-read world state. Returns {pass, evidence}. Independent of execute().
+    F18: placeholders and error-like observations FAIL — never checkpointed."""
     name, args = step["action"], step.get("args", {})
     try:
         if name == "fetch_page":
@@ -117,11 +124,24 @@ def verify(step: dict, exec_out: dict):
                     "evidence": exec_out.get("evidence", "")}
         if name == "create_file":
             fp = exec_out.get("path", "")
-            ok = bool(fp) and os.path.isfile(fp) and os.path.getsize(fp) > 0
-            return {"pass": ok, "evidence": f"file exists, {os.path.getsize(fp) if ok else 0} bytes"}
+            if not (fp and os.path.isfile(fp) and os.path.getsize(fp) > 0):
+                return {"pass": False, "evidence": "file missing or empty"}
+            try:
+                with open(fp, encoding="utf-8", errors="ignore") as f:
+                    body = f.read(2000).strip()
+                lines = [ln for ln in body.splitlines() if ln.strip()]
+                if len(lines) <= 1 and (not lines or lines[0].startswith("#")):
+                    return {"pass": False, "evidence": "heading-only placeholder, no real content"}
+            except Exception:
+                return {"pass": False, "evidence": "file unreadable"}
+            return {"pass": True, "evidence": f"file exists, {os.path.getsize(fp)} bytes, real content"}
         if name == "read_file":
-            return {"pass": exec_out.get("length", 0) > 0, "evidence": exec_out.get("evidence", "")}
+            if _looks_like_error(exec_out.get("evidence", "")) or not exec_out.get("length"):
+                return {"pass": False, "evidence": "read failed or empty"}
+            return {"pass": True, "evidence": exec_out.get("evidence", "")}
         if name == "web_search":
+            if _looks_like_error(exec_out.get("evidence", "")):
+                return {"pass": False, "evidence": "search returned an error, not results"}
             return {"pass": True, "evidence": exec_out.get("evidence", "")}
         if name == "calendar_add":
             eid = exec_out.get("id")
@@ -152,6 +172,8 @@ def verify(step: dict, exec_out: dict):
             found = any(l.get("id") == lid for l in list_loops())
             return {"pass": found, "evidence": f"loop #{lid} {'open' if found else 'MISSING'}"}
         if name in ("open_url", "notify_user"):
+            if _looks_like_error(exec_out.get("evidence", "")):
+                return {"pass": False, "evidence": "action reported an error, not success"}
             return {"pass": True, "evidence": exec_out.get("evidence", "")}
         if name == "ask_user":
             return {"pass": False, "evidence": "waiting on human", "waiting": True}

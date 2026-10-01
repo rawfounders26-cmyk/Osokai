@@ -1,0 +1,4 @@
+# Research: Off-beat / hidden-gem destinations 2025 for Indian travelers: lesser-known places (Majuli, Spiti Valley, Rann of Kutch, Coorg, Dzukou Valley, Nainital vs Mussoorie, Gokarna, Alleppey backwaters, Konark, Bir, Rishikesh winter) — what makes each unique, ideal season, 3-5 days average plan, per-day budget, how to get there from Delhi
+
+QUERY: Off-beat / hidden-gem destinations 2025 for Indian travelers: lesser-known places (Majuli, Spiti Valley, Rann of Kutch, Coorg, Dzukou Valley, Nainital vs Mussoorie, Gokarna, Alleppey backwaters, Konark, Bir, Rishikesh winter) — what makes each unique, ideal season, 3-5 days average plan, per-day budget, how to get there from Delhi
+(no results)
