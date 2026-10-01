@@ -1,5 +1,10 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## memory package — ✅ DONE: people/places/episodic/procedural + consolidation (façade untouched)
+- [x] `app/memory/` package (`memory.py` → `__init__.py`, all 72 prior tests green unmodified): people, places, episodic log + decay, routines with use-counts, unified salience+recency recall across facts/people/places/episodes.
+- [x] `consolidation.run()`: events → episodes (idempotent), 90-day decay, wake-fired prune; `memory_consolidate` scheduler kind. Verified live.
+- [x] `memory/api.py` router (people/places/recall-all/consolidate) + mobile wrappers. Live-verified end-to-end, probe rows cleaned.
+
 ## context engine — ✅ DONE: event bus + snapshot + wake conditions (no new screens)
 - [x] `app/context/events.py`: normalized bus (19 types), validated emit, indexed list. Emitters in goals/loops/approvals/calendar/bills/tasks (lazy, guarded, never-raise).
 - [x] `app/context/store.py`: on-demand world snapshot (goals, approvals, loops, today, events, spend) + one-paragraph brief for prompts.
@@ -90,5 +95,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 72 nightly evals gating every release — reliability story.
+- 75 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

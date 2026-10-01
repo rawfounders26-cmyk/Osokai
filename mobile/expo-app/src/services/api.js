@@ -418,6 +418,11 @@ export const slmFetch = (url) => post('/slm/fetch', { url });
 export const ctxEvents = (limit = 20) => get(`/context/events?limit=${limit}`).then(j => j.events || []);
 export const ctxSnapshot = () => get('/context/snapshot');
 export const wakeList = () => get('/context/wake').then(j => j.conditions || []);
+
+// memory package surfaces
+export const personAdd = (name, relation = '', notes = '') => post('/memory/people', { name, relation, notes });
+export const placeAdd = (name, kind = '', notes = '') => post('/memory/places', { name, kind, notes });
+export const recallAll = (q) => get(`/memory/recall-all?q=${encodeURIComponent(q)}`).then(j => j.results || []);
 // live sync: one socket per app session, backoff reconnect, heartbeat-safe
 let syncSock = null;
 let syncDelay = 5000;

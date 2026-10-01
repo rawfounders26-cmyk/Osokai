@@ -4,7 +4,7 @@
 > until merchant-services building starts. Conversations are RAM; this file is disk.
 
 ## Where we are
-- **Version**: v0.6.0 + hardening + hygiene + hierarchy steps 1–4 COMPLETE + context engine. **Tests**: 72/72 green.
+- **Version**: v0.6.0 + hardening + hygiene + hierarchy steps 1–4 COMPLETE + context engine + memory package. **Tests**: 75/75 green.
 - **Last shipped**: hardening (no features) — recurring double-post fix, shared WAL DB helper,
   thread-safe memory, secrets audit clean, deep health, input clamps, 3 hardening evals.
 - **Before that**: v0.6 platform · v0.5 · v0.4.x (outfit + bills, mobile screens, cloud pack) ·
@@ -61,6 +61,9 @@
 #    cross-device handoff, SLM weights drop-in, merchant-services Phase 1.
 
 ## Session log
+- 2026-10-01: memory package shipped (people/places/episodic/procedural/retrieval/consolidation,
+  façade + router + scheduler kind, 3 evals, live verified) → 75 tests. Next: policy engine
+  (risk tiers replacing keyword sentinel) or capability router.
 - 2026-10-01: context engine shipped (event bus + snapshot + wake conditions + normalizers,
   router, 4 evals, live chat→event→wake→nudge verified) → 72 tests. Next: memory package
   (episodic/semantic/procedural + consolidation) or policy engine.

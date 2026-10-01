@@ -70,6 +70,36 @@ class Memory:
         except Exception:
             return ""
 
+    # ---- memory package: people / places / unified recall (façade delegates) ----
+    # top-level first (tests), app.* fallback (server): same copy per environment
+    def remember_person(self, name: str, relation: str = "", notes: str = ""):
+        try:
+            from memory.people import remember_person
+        except ImportError:
+            from app.memory.people import remember_person
+        return remember_person(name, relation, notes)
+
+    def remember_place(self, name: str, kind: str = "", notes: str = ""):
+        try:
+            from memory.places import remember_place
+        except ImportError:
+            from app.memory.places import remember_place
+        return remember_place(name, kind, notes)
+
+    def recall_all(self, query: str = "", k: int = 8):
+        try:
+            from memory.retrieval import recall_all
+        except ImportError:
+            from app.memory.retrieval import recall_all
+        return recall_all(query, k)
+
+    def consolidate(self):
+        try:
+            from memory.consolidation import run
+        except ImportError:
+            from app.memory.consolidation import run
+        return run()
+
     def _refresh_summary(self):
         rows = self.db.execute("SELECT role, text FROM turns ORDER BY ts DESC LIMIT 30").fetchall()
         convo = "\n".join(f"{r[0]}: {r[1][:300]}" for r in reversed(rows))

@@ -23,7 +23,7 @@ except ImportError:
     from db import connect as _hardb
 DB = _pdata("osokai.db")
 KINDS = ("goal_step", "briefing", "research_sweep", "nudge_scan", "bills_recurring", "settle_reminder",
-         "research_digest")
+         "research_digest", "memory_consolidate")
 
 
 def _db():
@@ -170,6 +170,14 @@ def execute(job: dict) -> dict:
                 return {"ok": r["ok"], "note": r["note"]}
             r = run_all()
             return {"ok": True, "note": r["note"]}
+        if kind == "memory_consolidate":
+            try:
+                from app.memory.consolidation import run as _con
+            except ImportError:
+                from memory.consolidation import run as _con
+            r = _con()
+            return {"ok": True,
+                    "note": f"{r['episodes']} episodes, {r['decayed']} decayed, {r['pruned']} pruned"}
     except Exception as e:
         return {"ok": False, "note": f"{type(e).__name__}: {e}"[:300]}
     return {"ok": False, "note": "unknown kind"}

@@ -2153,3 +2153,8 @@ try:
 except ImportError:
     from context.api import router as _ctx_router
 app.include_router(_ctx_router)
+try:
+    from app.memory.api import router as _mem_router
+except ImportError:
+    from memory.api import router as _mem_router
+app.include_router(_mem_router)

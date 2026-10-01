@@ -896,3 +896,56 @@ def test_snapshot_shape(tmp_path, monkeypatch):
     s = store.snapshot()
     assert set(s) >= {"goals", "approvals", "loops_due", "today", "recent_events", "spend", "ts"}
     assert isinstance(store.brief(), str)
+
+# ---- memory package evals: people, places, episodic, procedural, retrieval, consolidation ----
+
+def test_memory_people_places(tmp_path, monkeypatch):
+    from memory import store, people, places
+    monkeypatch.setattr(store, "DB", str(tmp_path / "mp.db"))
+    assert people.remember_person("")["ok"] is False
+    assert people.remember_person("Rahul", "colleague", "owns the deck")["ok"] is True
+    assert people.remember_person("Rahul", "colleague", "owns the deck v2")["updated"] is True
+    assert len(people.list_people()) == 1  # upsert, no dupes
+    assert people.find_person("rah") and not people.find_person("zz")
+    assert places.remember_place("Anna Nagar", "neighborhood")["ok"] is True
+    assert len(places.list_places()) == 1
+
+
+def test_memory_episodic_procedural(tmp_path, monkeypatch):
+    from memory import store, episodic, procedural
+    monkeypatch.setattr(store, "DB", str(tmp_path / "mp2.db"))
+    assert episodic.log_episode("")["ok"] is False
+    episodic.log_episode("Completed goal: wedding", 3.0)
+    episodic.log_episode("trivial", 0.5)
+    assert len(episodic.recent_episodes()) == 2
+    assert episodic.forget_before(9999999999) == 1  # only low-importance decays
+    assert procedural.record_routine("", [])["ok"] is False
+    procedural.record_routine("Friday review", ["check calendar", "summarize week"])
+    r = procedural.record_routine("Friday review", ["check calendar", "summarize week"])
+    assert r["times_used"] == 2
+    assert procedural.suggest_routines("friday")[0]["name"] == "Friday review"
+
+
+def test_memory_unified_recall_and_consolidate(tmp_path, monkeypatch):
+    import memory as _m
+    from memory import store, consolidation
+    from context import events
+    _patch_both(monkeypatch, "memory.store", "DB", str(tmp_path / "mp3.db"))
+    monkeypatch.setattr(_m, "DB", str(tmp_path / "mp3.db"))
+    try:
+        import app.memory as _am
+        monkeypatch.setattr(_am, "DB", str(tmp_path / "mp3.db"))
+    except ImportError:
+        pass
+    _m.Memory().note_fact("user is vegetarian", 3.0)
+    from memory import people as _p, episodic as _e
+    _p.remember_person("Rahul", "colleague", "vegetarian too")
+    _e.log_episode("Discussed vegetarian catering with Rahul", 2.0)
+    hits = _m.Memory().recall_all("vegetarian rahul")
+    kinds = {h["kind"] for h in hits}
+    assert {"fact", "person", "episode"} <= kinds  # one query, every layer
+    _patch_both(monkeypatch, "context.events", "DB", str(tmp_path / "ev5.db"))
+    events.emit("goal.completed", {"id": 1, "title": "Probe"})
+    r = consolidation.run()
+    assert r["episodes"] >= 1
+    assert consolidation.run()["episodes"] == 0  # idempotent: no dupes
