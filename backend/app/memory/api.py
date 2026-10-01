@@ -60,3 +60,22 @@ def recall_all(q: str = "", k: int = 8, _=Depends(_auth_dep())):
 @router.post("/memory/consolidate")
 async def consolidate(_=Depends(_auth_dep())):
     return _mem().consolidate()
+
+
+@router.post("/memory/confirm")
+async def confirm(payload: dict, _=Depends(_auth_dep())):
+    """Explicit feedback: this recalled memory was actually useful."""
+    try:
+        from memory.retrieval import confirm_useful
+    except ImportError:
+        from app.memory.retrieval import confirm_useful
+    return confirm_useful(payload.get("text", ""))
+
+
+@router.get("/memory/recall-explain")
+def recall_explain(q: str = "", k: int = 8, _=Depends(_auth_dep())):
+    try:
+        from memory.retrieval import recall_all
+    except ImportError:
+        from app.memory.retrieval import recall_all
+    return {"results": recall_all(q[:200], k, explain=True)}

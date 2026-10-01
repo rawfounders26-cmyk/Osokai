@@ -1,5 +1,13 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## learned memory — ✅ DONE: our own design (inspired by, not taken from, ai-memory-mcp)
+- [x] Multi-factor recall (`retrieval.py`): salience, keyword, recency, relationship,
+  goal relevance, confirmation, source trust — with per-result factor breakdowns.
+- [x] Write-time dedup + promotion (3+ sightings), TTL tiers (7/30/180/permanent), recall
+  shadow-feedback + confirm endpoint, nightly consolidation. Verified live with factor output.
+- [x] Clean-room rule honored: no foreign code, binary, or translation in the repo — ideas only.
+- [x] `docs/EVIDENCE.md` evidence-per-release + README section. 4 new evals.
+
 ## code-review batch 4 — ✅ DONE: reproducible delivery (F07–F12, F24, F30–F34)
 - [x] **F08**: nonstandard Caddy `rate_limit` removed (backend limiter owns it); CI validates the Caddyfile.
 - [x] **F09/F10**: vault + connector stores moved to the data dir (one-time migration, atomic writes); dev compose mounts `/data` correctly.
@@ -149,5 +157,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 112 nightly evals gating every release — reliability story.
+- 116 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

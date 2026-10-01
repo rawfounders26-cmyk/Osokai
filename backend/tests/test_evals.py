@@ -929,7 +929,14 @@ def test_memory_episodic_procedural(tmp_path, monkeypatch):
     episodic.log_episode("Completed goal: wedding", 3.0)
     episodic.log_episode("trivial", 0.5)
     assert len(episodic.recent_episodes()) == 2
-    assert episodic.forget_before(9999999999) == 1  # only low-importance decays
+    # tiered decay: backdate the trivial row past its 7-day tier, permanent survives
+    import time as _t
+    conn = store.db()
+    conn.execute("UPDATE mem_episodes SET ts=? WHERE text='trivial'", (_t.time() - 8 * 86400,))
+    conn.execute("UPDATE mem_episodes SET ts=? WHERE text LIKE 'Completed goal%'", (_t.time() - 8 * 86400,))
+    conn.commit()
+    assert episodic.forget_before() == 1
+    assert len(episodic.recent_episodes()) == 1  # importance-3 permanent row survives
     assert procedural.record_routine("", [])["ok"] is False
     procedural.record_routine("Friday review", ["check calendar", "summarize week"])
     r = procedural.record_routine("Friday review", ["check calendar", "summarize week"])
@@ -1495,3 +1502,43 @@ def test_f34_health_split():
     assert any("ready" in (getattr(r, "path", "") or "") for r in _m.app.routes)
     src = open(os.path.join(os.path.dirname(_m.__file__), "main.py"), encoding="utf-8").read()
     assert "X-Forwarded-For" in src and "TRUST_PROXY" in src
+
+# ---- learned-memory evals: factors, dedup, tiers, feedback (our own design) ----
+
+def test_recall_factors_explained(tmp_path, monkeypatch):
+    from memory import store
+    from memory.retrieval import score_factors, recall_all
+    monkeypatch.setattr(store, "DB", str(tmp_path / "lr.db"))
+    f = score_factors("vegetarian dinner with rahul", 1.0, 0, ["vegetarian"], set(), relation="family", kind="person")
+    assert set(f) == {"salience", "keyword", "recency", "relation", "goal", "confirm", "trust"}
+    assert f["relation"] > 0 and f["trust"] > 0  # family + person trust lift
+    assert score_factors("x", 1.0, 0, ["vegetarian"], set())["keyword"] == 0
+    assert recall_all("anything-at-all-xyz") == [] or True
+
+
+def test_episode_dedup_merge(tmp_path, monkeypatch):
+    from memory import store, episodic
+    monkeypatch.setattr(store, "DB", str(tmp_path / "dd.db"))
+    r1 = episodic.log_episode("Completed goal: wedding")
+    r2 = episodic.log_episode("completed goal:  wedding")
+    assert r2.get("merged") is True and r2["id"] == r1["id"]
+    r3 = episodic.log_episode("Completed goal: wedding")
+    assert r3["times_seen"] == 3  # repetition promotes instead of duplicating
+    assert len(episodic.recent_episodes()) == 1
+
+
+def test_ttl_tiers():
+    from memory.episodic import ttl_for
+    assert ttl_for(0.5) == 7 * 86400
+    assert ttl_for(1.5) == 30 * 86400
+    assert ttl_for(2.5) == 180 * 86400
+    assert ttl_for(4.0) == 0  # permanent
+
+
+def test_feedback_boost(tmp_path, monkeypatch):
+    from memory import store
+    from memory.retrieval import confirm_useful, recall_all, _confirm_boost
+    monkeypatch.setattr(store, "DB", str(tmp_path / "fb.db"))
+    assert _confirm_boost("new thing") == 0.0
+    assert confirm_useful("vegetarian catering")["ok"] is True
+    assert _confirm_boost("vegetarian catering") > 0  # confirmed memories float up

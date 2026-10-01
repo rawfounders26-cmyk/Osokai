@@ -483,6 +483,7 @@ export const wakeList = () => get('/context/wake').then(j => j.conditions || [])
 export const personAdd = (name, relation = '', notes = '') => post('/memory/people', { name, relation, notes });
 export const placeAdd = (name, kind = '', notes = '') => post('/memory/places', { name, kind, notes });
 export const recallAll = (q) => get(`/memory/recall-all?q=${encodeURIComponent(q)}`).then(j => j.results || []);
+export const recallConfirm = (text) => post('/memory/confirm', { text });
 
 // persistent specialists surfaces
 export const specSeed = () => post('/specialists/seed', {});

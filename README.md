@@ -27,6 +27,13 @@ npm run dist-mac  # .dmg (run on Mac)
 - mobile: `flutter run --dart-define=API_BASE_URL=http://<PC-LAN-IP>:8765`
 - extension: load unpacked `extension/`, backend must be running.
 
+## learned memory (our own design)
+- Multi-factor recall (`GET /memory/recall-explain` shows every factor: salience, keyword,
+  recency, relationship, goal relevance, confirmation, source trust)
+- Write-time dedup + promotion, TTL tiers (7/30/180/permanent), recall feedback loop
+  (`POST /memory/confirm`), nightly consolidation (`POST /memory/consolidate`)
+- Evidence per release: `docs/EVIDENCE.md`
+
 ## v0.3 scale-up
 - Usage/cost dashboard (`/usage/summary`, `/usage/budget`) · skill marketplace (`/marketplace`)
 - Team mode (`/teams/*`) · local fast lane (zero-token answers) · voice loop (`/voice/command`, `/voice/speak`)

@@ -22,9 +22,15 @@ def db():
         notes TEXT DEFAULT '', ts REAL)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS mem_episodes(
         id INTEGER PRIMARY KEY, text TEXT, importance REAL DEFAULT 1.0, ts REAL)""")
+    try:
+        conn.execute("ALTER TABLE mem_episodes ADD COLUMN seen INT DEFAULT 1")
+    except Exception:
+        pass
     conn.execute("""CREATE TABLE IF NOT EXISTS mem_routines(
         id INTEGER PRIMARY KEY, name TEXT, steps TEXT DEFAULT '[]',
         times_used INT DEFAULT 0, ts REAL)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS recall_feedback(
+        h TEXT PRIMARY KEY, shown INT DEFAULT 0, confirmed INT DEFAULT 0)""")
     return conn
 
 
