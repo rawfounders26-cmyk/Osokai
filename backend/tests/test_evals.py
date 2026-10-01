@@ -1021,3 +1021,44 @@ def test_router_roles_add_signal():
     with_roles = route("quarterly update", ["pptx", "startup-financial-modeling"], names)["tools"]
     assert "make_pptx" in with_roles  # role context pulls the builder in
     assert "make_pptx" not in plain
+
+# ---- benchmark harness evals: battery shape + plan runner + metrics ----
+
+def test_battery_shape():
+    from benchmark import tasks
+    assert tasks.count() == 100
+    assert set(tasks.CATEGORIES) == {"browser", "research", "email_calendar", "coding",
+                                     "personal", "bills", "wardrobe", "long_running"}
+    seen = set()
+    for tid, cat, prompt, tools, appr in tasks.TASKS:
+        assert cat in tasks.CATEGORIES and prompt and tools
+        assert isinstance(appr, bool)
+        assert tid not in seen
+        seen.add(tid)
+
+
+def test_plan_run_scores(tmp_path, monkeypatch):
+    from benchmark import run
+    monkeypatch.setattr(run, "DB", str(tmp_path / "bench.db"))
+    r = run.run_plan()
+    assert r["ok"] and r["total"] == 100 and r["mode"] == "plan"
+    assert set(r["by_category"]) == set(__import__("benchmark.tasks", fromlist=["CATEGORIES"]).CATEGORIES)
+    assert 0 <= r["score"] <= 100
+    hist = run.history()
+    assert len(hist) == 1 and hist[0]["mode"] == "plan"
+    r2 = run.run_plan("bills")
+    assert r2["total"] == 12 and set(r2["by_category"]) == {"bills"}
+
+
+def test_live_gated_and_interventions(tmp_path, monkeypatch):
+    import os as _os
+    from benchmark import run
+    from context import events
+    monkeypatch.setattr(run, "DB", str(tmp_path / "bench2.db"))
+    _patch_both(monkeypatch, "context.events", "DB", str(tmp_path / "ev6.db"))
+    _os.environ.pop("OSOKAI_BENCH_LIVE", None)
+    assert run.run_live(1)["ok"] is False  # never live without opt-in
+    events.emit("goal.created", {"id": 1, "title": "Probe goal"})
+    events.emit("approval.requested", {"id": 1, "message": "probe"})
+    m = run.interventions_per_goal()
+    assert m["goals"] >= 1 and m["avg_interventions"] >= 1.0

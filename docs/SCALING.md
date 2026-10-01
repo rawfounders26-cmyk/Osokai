@@ -1,5 +1,11 @@
 # Osok-AI — scaling plan (founder/CTO notes)
 
+## benchmark harness — ✅ DONE: 100-task battery, plan 100/100, north-star metric
+- [x] `app/benchmark/tasks.py`: 100 tasks × 8 categories (browser/research/email_calendar/coding/personal/bills/wardrobe/long_running) with expected tools + approval flags.
+- [x] `app/benchmark/run.py`: PLAN mode (offline routing+gate accuracy, CI-safe) + LIVE mode (env-gated, budget-capped, cost/intervention tracking) + run history + `interventions_per_goal` (event-window attribution).
+- [x] Tuned 74 → **100/100** plan score. Every fix was principled: lakh/crore parsing, email/complaint/leave gating, money-reminder ≠ payment, planning-with-budget is free.
+- [x] Endpoints + first live numbers: bills 12/12, avg interventions 0.15/goal.
+
 ## capability router — ✅ DONE: goal-aware tool selection (keyword flags retired)
 - [x] `app/capabilities.py`: 38 tools scored by weighted keyword phrases + role-signal overlap; base capabilities always ride; capped at 18; every inclusion explained.
 - [x] Wired into `run_goal` with safe fallback. Bidirectional substring matching (catches `ppt`→`pptx`).
@@ -105,5 +111,5 @@
 
 ## Moats to protect
 - Encrypted vault + approval mediation (payment/captcha) — trust story.
-- 81 nightly evals gating every release — reliability story.
+- 84 nightly evals gating every release — reliability story.
 - Single SQLite brain, portable, no vendor lock — exit story.

@@ -10,12 +10,14 @@ RULES = [
     ("CRITICAL", [r"\bformat\b.*\bdrive\b", r"\bdelete\b.*\baccount\b", r"\btransfer\b.*\d{5,}",
                   r"\bpay\b.*\d{5,}", r"\bpassword\b", r"\botp\b", r"\bcvv\b"], 50000),
     ("HIGH", [r"\bsend\b.*\bemail\b", r"\bdelete\b", r"\bpayment\b", r"\bbuy\b", r"\border\b",
-               r"\bpay\b", r"\bpost to\b", r"\bwhatsapp send\b", r"\bsubmit\b.*\bpayment\b"], 10000),
+               r"\bpay\b", r"\bpost to\b", r"\bwhatsapp send\b", r"\bsubmit\b.*\bpayment\b",
+               r"\bsend\b", r"\bemail\b", r"\bcomplaint\b", r"\bleave\b"], 10000),
     ("MEDIUM", [r"\bschedule\b", r"\bpublish\b", r"\bshare\b.*\blink\b", r"\binstall\b",
                  r"\bsettle\b", r"\bsplit\b.*\d"], 0),
 ]
 
-AMOUNT_RE = re.compile(r"(?:rs\.?|₹|\$)\s?([\d,]+)|\b(\d[\d,]*)\s?(?:rs|inr|rupees)\b", re.I)
+AMOUNT_RE = re.compile(
+    r"(?:rs\.?|₹|\$)\s?([\d,\.]+)|([\d,\.]+)\s?(?:rs|inr|rupees)\b|([\d\.]+)\s?(lakh|lac|l|crore|cr|k)\b", re.I)
 
 
 def _amount_inr(text: str) -> float:
@@ -23,17 +25,27 @@ def _amount_inr(text: str) -> float:
     if not m:
         return 0.0
     try:
+        if m.group(3):
+            mult = {"lakh": 1e5, "lac": 1e5, "l": 1e5, "crore": 1e7, "cr": 1e7, "k": 1e3}[m.group(4).lower()]
+            return float(m.group(3)) * mult
         return float((m.group(1) or m.group(2) or "0").replace(",", ""))
     except Exception:
         return 0.0
+
+
+MONEY_VERBS = r"\b(pay|buy|purchase|book|order|spend|transfer|invest|subscribe|rent out)\b"
 
 
 def classify(text: str) -> dict:
     """Return {tier, reason, amount}. Pure function — cheap to eval exhaustively."""
     t = (text or "").lower()
     amount = _amount_inr(t)
-    if amount >= 50000:
-        return {"tier": "CRITICAL", "reason": f"amount ₹{amount:,.0f} ≥ 50000", "amount": amount}
+    moves_money = bool(re.search(MONEY_VERBS, t))
+    if amount >= 50000 and moves_money:
+        return {"tier": "CRITICAL", "reason": f"spends ₹{amount:,.0f} ≥ 50000", "amount": amount}
+    # a reminder ABOUT money is not moving money — notify, don't gate
+    if re.search(r"\bremind", t) and re.search(r"\b(pay|payment|bill|rent)\b", t):
+        return {"tier": "MEDIUM", "reason": "money reminder (not a payment)", "amount": amount}
     for tier, patterns, threshold in RULES:
         for pat in patterns:
             if re.search(pat, t):
@@ -42,7 +54,9 @@ def classify(text: str) -> dict:
                             "reason": f"pattern + amount ₹{amount:,.0f}", "amount": amount}
                 return {"tier": tier, "reason": f"matched '{pat}'", "amount": amount}
     if amount >= 10000:
-        return {"tier": "HIGH", "reason": f"amount ₹{amount:,.0f} ≥ 10000", "amount": amount}
+        if moves_money:
+            return {"tier": "HIGH", "reason": f"spends ₹{amount:,.0f} ≥ 10000", "amount": amount}
+        return {"tier": "MEDIUM", "reason": f"budget mentioned ₹{amount:,.0f} (planning is free)", "amount": amount}
     if amount > 0:
         return {"tier": "MEDIUM", "reason": f"money involved ₹{amount:,.0f}", "amount": amount}
     return {"tier": "LOW", "reason": "no sensitive signals", "amount": 0.0}

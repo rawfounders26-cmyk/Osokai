@@ -2181,3 +2181,8 @@ try:
 except ImportError:
     from memory.api import router as _mem_router
 app.include_router(_mem_router)
+try:
+    from app.benchmark.api import router as _bench_router
+except ImportError:
+    from benchmark.api import router as _bench_router
+app.include_router(_bench_router)
