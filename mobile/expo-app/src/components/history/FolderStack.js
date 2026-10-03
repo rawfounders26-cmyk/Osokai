@@ -3,15 +3,15 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { MonthFolderShape, accentForMonth, inkForAccent, shortLabel } from './MonthFolder';
 
-// Vertical step between stacked folders + swipe threshold physics.
-const STEP_Y = 108;
+// Horizontal step between stacked folders + swipe threshold physics.
+const STEP_X = 108;
 const SWIPE_DIST = 60;
 const SWIPE_VEL = 550;
 
 export function FolderStack({ months, front, onFrontChange, onOpen, locked }) {
   const frontIdx = Math.max(0, months.findIndex(m => m.month === front));
   const pos = useRef(new Animated.Value(frontIdx)).current;
-  const dragY = useRef(new Animated.Value(0)).current;
+  const dragX = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.spring(pos, { toValue: frontIdx, useNativeDriver: true, damping: 22, stiffness: 220 }).start();
@@ -19,23 +19,23 @@ export function FolderStack({ months, front, onFrontChange, onOpen, locked }) {
 
   const settleDrag = (toFront) => {
     if (toFront !== frontIdx) {
-      Animated.timing(dragY, { toValue: 0, duration: 160, useNativeDriver: true }).start();
+      Animated.timing(dragX, { toValue: 0, duration: 160, useNativeDriver: true }).start();
       onFrontChange(months[toFront].month);
     } else {
-      Animated.spring(dragY, { toValue: 0, useNativeDriver: true, damping: 20, stiffness: 260 }).start();
+      Animated.spring(dragX, { toValue: 0, useNativeDriver: true, damping: 20, stiffness: 260 }).start();
     }
   };
 
   const pan = Gesture.Pan()
     .enabled(!locked && months.length > 1)
-    .activeOffsetY([-14, 14])
-    .onUpdate(e => dragY.setValue(e.translationY))
+    .activeOffsetX([-14, 14])
+    .onUpdate(e => dragX.setValue(e.translationX))
     .onEnd(e => {
-      const dy = e.translationY;
-      const vy = e.velocityY;
+      const dx = e.translationX;
+      const vx = e.velocityX;
       let target = frontIdx;
-      if (dy < -SWIPE_DIST || vy < -SWIPE_VEL) target = Math.min(frontIdx + 1, months.length - 1);
-      else if (dy > SWIPE_DIST || vy > SWIPE_VEL) target = Math.max(frontIdx - 1, 0);
+      if (dx < -SWIPE_DIST || vx < -SWIPE_VEL) target = Math.min(frontIdx + 1, months.length - 1);
+      else if (dx > SWIPE_DIST || vx > SWIPE_VEL) target = Math.max(frontIdx - 1, 0);
       settleDrag(target);
     });
 
@@ -45,11 +45,11 @@ export function FolderStack({ months, front, onFrontChange, onOpen, locked }) {
     <GestureDetector gesture={pan}>
       <View style={fs.stage}>
         {months.map((m, i) => {
-          const off = Animated.subtract(Animated.subtract(pos, Animated.divide(dragY, STEP_Y)), i);
+          const off = Animated.subtract(Animated.subtract(pos, Animated.divide(dragX, STEP_X)), i);
           const depth = off.interpolate({
             inputRange: [-2, 0, 2], outputRange: [-2, 0, 2], extrapolate: 'clamp',
           });
-          const translateY = Animated.multiply(depth, -STEP_Y);
+          const translateX = Animated.multiply(depth, -STEP_X);
           const scale = depth.interpolate({ inputRange: [-2, 0, 2], outputRange: [0.9, 1, 0.9] });
           const opacity = depth.interpolate({
             inputRange: [-2.5, -1, 0, 1, 2.5], outputRange: [0.2, 0.55, 1, 0.55, 0.2],
@@ -63,7 +63,7 @@ export function FolderStack({ months, front, onFrontChange, onOpen, locked }) {
           return (
             <Animated.View
               key={m.month}
-              style={[fs.card, { transform: [{ translateY }, { scale }, { rotate }], opacity, zIndex: order, elevation: order }]}
+              style={[fs.card, { transform: [{ translateX }, { scale }, { rotate }], opacity, zIndex: order, elevation: order }]}
             >
               <TouchableOpacity onPress={() => onOpen(m.month)} activeOpacity={0.92}>
                 <MonthFolderShape color={a} />
